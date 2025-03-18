@@ -157,62 +157,10 @@ Standard_Real CurveFair::GetLengthByParam(Standard_Real sParam, Standard_Real eP
 std::string format_as(gp_Vec Vec)
 {
     std::stringstream ss;
-    ss << Vec.X() << ", " << Vec.Y() << ", " << Vec.Z() << ", Magnitude(): " << Vec.Magnitude();
+    ss << "(" << Vec.X() << ", " << Vec.Y() << ", " << Vec.Z() << ")" << " 模长 : " << Vec.Magnitude();
     return ss.str();
 }
-Handle(Geom_BSplineCurve) CurveFair::ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol)
-{
-    // bspline属性
-    Standard_Real firstParam = theCurve->FirstParameter();
-    Standard_Real lastParam = theCurve->LastParameter();
 
-    auto bsplineKnots = theCurve->Knots();
-    const Standard_Integer LOWER = bsplineKnots.Lower();
-    const Standard_Integer UPPER = bsplineKnots.Upper();
-
-    // bspline: 计算弧长
-    GeomAdaptor_Curve curveAdapter(theCurve);
-    Standard_Real bsplineLen = GCPnts_AbscissaPoint::Length(curveAdapter, firstParam, lastParam, tol);
-    Standard_Real avgLen = bsplineLen / (paraNum - 1.0);
-    Standard_Real paramStep = (lastParam - firstParam) / (paraNum - 1.0);
-
-    // 弧长参数化: 计算新的节点向量
-    TColStd_Array1OfReal reparamKnots(LOWER, LOWER + paraNum - 1);
-    TColgp_Array1OfPnt reparamPoints(LOWER, LOWER + paraNum - 1);
-    reparamKnots.SetValue(LOWER, firstParam);
-    reparamPoints.SetValue(LOWER, gp_Pnt(firstParam, firstParam, firstParam));
-
-    Standard_Real curLen = 0.0;
-    Standard_Real curParam = firstParam;
-    for (Standard_Integer i = LOWER + 1; i < paraNum; i++)
-    {
-        curLen += avgLen;
-
-        curParam += paramStep;
-
-        GCPnts_AbscissaPoint gap(curveAdapter, curLen, firstParam);
-        Standard_Real tparam = gap.Parameter();
-
-        reparamKnots.SetValue(i, curParam);
-        reparamPoints.SetValue(i, gp_Pnt(tparam, tparam, tparam));
-    }
-    reparamKnots.SetValue(paraNum, lastParam);
-    reparamPoints.SetValue(paraNum, gp_Pnt(lastParam, lastParam, lastParam));
-
-    // 为每一个点，添加参数
-    fitPoints = reparamPoints;
-    /*fitParams = reparamKnots;*/
-    inner = GeomAPI_PointsToBSpline(
-        reparamPoints,
-        reparamKnots,
-        theCurve->Degree(),
-        theCurve->Degree(),
-        GeomAbs_C0,
-        1e-7
-    );
-
-    return inner;
-}
 
 
 Standard_Real CurveFair::GetCurveCurvature(const Handle(Geom_BSplineCurve) theCurve, const Standard_Real t)
@@ -248,7 +196,7 @@ Standard_Real CurveFair::GetCurvatureDerivativeSquare(const Standard_Real t, con
     gp_Vec d3 = outDerv3 * pow(inD1, 3) + outDerv2 * (3 * inD1 * inD2) + outDerv1 * inD3;
     Standard_Real aCurvature = d2.Magnitude() / pow(d1.Magnitude(), 2);
     Standard_Real  aCurvatureDerivative = d3.Magnitude() / pow(d1.Magnitude(), 3);
-    
+
     //std::cout << "弧长参数化曲率（修正后）:" << aCurvature << std::endl;
     //std::cout << "弧长参数化曲率变化率(修正后)" << aCurvatureDerivative << std::endl;
 
@@ -268,91 +216,40 @@ Standard_Real CurveFair::GetFByGaussIntegral(const Standard_Real tol)
     CPnts_MyGaussFunction gaussFunction;
     //POP pout WNT
     gaussFunction.Init(GetCurvatureDerivativeSquare, this);
-      //FG.Init(f3d,(Standard_Address)&C);
-    //Adaptor3d_Curve adaptor(this->GetOuter());
-    // 使用适配器包装 B-Spline 曲线
+    //FG.Init(f3d,(Standard_Address)&C);
+  //Adaptor3d_Curve adaptor(this->GetOuter());
+  // 使用适配器包装 B-Spline 曲线
     Handle(GeomAdaptor_Curve) adaptor = new GeomAdaptor_Curve(this->GetOuter());
 
     std::cout << format_as(this->GetOuter()) << std::endl;
     std::cout << format_as(this->GetInner()) << std::endl;
     math_GaussSingleIntegration TheLength(
-        gaussFunction, 
+        gaussFunction,
         this->GetOuter()->FirstParameter(),
         this->GetOuter()->LastParameter(),
-        order(*adaptor), 
+        order(*adaptor),
         tol
     );
     return Abs(TheLength.Value());
 }
 
-Eigen::MatrixXd CurveFair::ComputeEnergyMatrix(
-    const Handle(Geom_BSplineCurve)& theBSplineCurve,
-    const Standard_Integer p,
-    const Standard_Integer k,
-    const Standard_Real tol)
-{
-    Standard_Integer n = theBSplineCurve->NbPoles();
-    TColgp_Array1OfPnt Poles = theBSplineCurve->Poles();
-    std::vector<Standard_Real> Knots;
-    for (Standard_Integer index = theBSplineCurve->KnotSequence().Lower(); index <= theBSplineCurve->KnotSequence().Upper(); index++)
-        Knots.push_back(theBSplineCurve->KnotSequence().Value(index));
 
-    Eigen::MatrixXd M(n, n);
-    M.setZero();
-
-    for (Standard_Integer i = 1; i < n - 1; ++i)
-    {
-        for (Standard_Integer j = i; j < n - 1; ++j)
-        {
-            Standard_Real integral = ComputeDerivativeIntegral(Knots, i, j, p, k, tol);
-            M(i, j) = integral;
-
-            // M(i, j)为对称矩阵
-            if (i != j)
-            {
-                M(j, i) = M(i, j);
-            }
-        }
-    }
-    return M;
-
-    ////验证基函数求导公式
-    //Eigen::MatrixXd Basis(n, 1);
-    //Basis.setZero();
-    //Standard_Real FirstParameter = Knots[0];
-    //Standard_Real LastParameter = Knots[Knots.size() - 1];
-    //for (Standard_Real u = FirstParameter; u < LastParameter; u += (LastParameter - FirstParameter) / 50)
-    //{
-    //    for (Standard_Integer i = 0; i < n; i++)
-    //    {
-    //        Standard_Real BasisDerivate = BasisFunctionDerivative(u, i, p, 3, Knots);
-    //        std::cout << "BasisDerivate:" << BasisDerivate << std::endl;
-    //        Basis(i, 0) += BasisDerivate;
-    //    }
-
-    //    Eigen::MatrixXd Temp = D0.transpose() * Basis;
-    //    std::cout << "D0" << std::endl << format_as(D0.transpose()) << std::endl;
-    //    std::cout << "Basis" << std::endl << format_as(Basis) << std::endl;
-    //    std::cout << "D0 * Basis" << std::endl << format_as(Temp) << std::endl;
-    //    
-    //    gp_Vec Derivate3 = gp_Vec(Temp(0, 0), Temp(1, 0), Temp(2, 0));
-    //    std::cout << "Derivate3" << format_as(Derivate3) << std::endl;
-    //}
-}
 
 struct BasisDerivativeIntegralContext
 {
     Standard_Integer i;                   // 基函数索引
+    Standard_Integer j;                   // 基函数索引
     Standard_Integer p;                   // 基函数阶数
     Standard_Integer k;                   // 导数阶数（对三阶导数为3）
     std::vector<Standard_Real> Knots;     // 节点向量
 
     BasisDerivativeIntegralContext(
         Standard_Integer index_i,
+        Standard_Integer index_j,
         Standard_Integer degree,
         Standard_Integer derivOrder,
         const std::vector<Standard_Real>& knotVector)
-        : i(index_i), p(degree), k(derivOrder), Knots(knotVector) {}
+        : i(index_i), j(index_j), p(degree), k(derivOrder), Knots(knotVector) {}
 };
 
 
@@ -365,7 +262,7 @@ Standard_Real CurveFair::ComputeDerivativeIntegral(
     const Standard_Real tol)
 {
     // 参数有效性验证
-    if (i < 0 || i + p + 1 >= Knots.size() || j < 0 || j + p + 1 >= Knots.size() || k > p) 
+    if (i < 0 || i + p + 1 >= Knots.size() || j < 0 || j + p + 1 >= Knots.size() || k > p)
     {
         return 0.0;
     }
@@ -382,44 +279,56 @@ Standard_Real CurveFair::ComputeDerivativeIntegral(
     Standard_Real lowerBound = std::max(lower_i, lower_j);
     Standard_Real upperBound = std::min(upper_i, upper_j);
 
+    if (upperBound < lowerBound) return 0.0;
 
+    /*Standard_Real lowerBound = Knots[0];
+    Standard_Real upperBound = Knots[Knots.size() - 1];*/
     // 检查区间是否有效
     if (std::abs(upperBound - lowerBound) < 1e-10)
     {
         return 0.0;
     }
-
-    Standard_Integer Step = 200;
+    Standard_Integer Step = 100;
     Standard_Real StepParameter = (upperBound - lowerBound) / Step;
     Standard_Real AbsResult = 0;
-    //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter) 
-    //{
-    //    AbsResult += BasisFunctionDerivative(parameter, i, p, k, Knots) * BasisFunctionDerivative(parameter, j, p, k, Knots);
-    //}
-    //AbsResult *= StepParameter;
 
+    //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+    //{
+    //    if (parameter > upperBound) parameter = upperBound;
+
+    //    Standard_Real f0 = f(parameter);
+    //    Standard_Real f1 = f(parameter, 1);
+    //    Standard_Real f2 = f(parameter, 2);
+    //    Standard_Real f3 = f(parameter, 3);
+
+    //    Standard_Real First = BasisFunctionDerivative(f0, i, p, 3, Knots) * pow(f1, 3)
+    //        + 3 * BasisFunctionDerivative(f0, i, p, 2, Knots) * f1 * f2
+    //        + BasisFunctionDerivative(f0, i, p, 1, Knots) * f3;
+
+    //    Standard_Real Second = BasisFunctionDerivative(f0, j, p, 3, Knots) * pow(f1, 3)
+    //        + 3 * BasisFunctionDerivative(f0, j, p, 2, Knots) * f1 * f2
+    //        + BasisFunctionDerivative(f0, j, p, 1, Knots) * f3;
+
+    //    //// 使用梯形法则, 端点权重为1/2，内点权重为1
+    //    //Standard_Real weight = 1.0;
+    //    //if (parameter ==  lowerBound || parameter == upperBound) weight = 0.5;
+
+    //    //AbsResult += First * Second * weight;
+    //    AbsResult += First * Second;
+    //}
+    //return AbsResult * StepParameter;
 
     for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
     {
-        Standard_Real f0 = f(parameter);
-        Standard_Real f1 = f(parameter, 1);
-        Standard_Real f2 = f(parameter, 2);
-        Standard_Real f3 = f(parameter, 3);
-
-        Standard_Real First = BasisFunctionDerivative(f0, i, p, 3, Knots) * pow(f1, 3)
-            + 3 * BasisFunctionDerivative(f0, i, p, 2, Knots) * f1 * f2
-            + BasisFunctionDerivative(f0, i, p, 1, Knots) * f3;
-
-        Standard_Real Second = BasisFunctionDerivative(f0, j, p, 3, Knots) * pow(f1, 3)
-            + 3 * BasisFunctionDerivative(f0, j, p, 2, Knots) * f1 * f2
-            + BasisFunctionDerivative(f0, j, p, 1, Knots) * f3;
+        Standard_Real First = BasisFunctionDerivative(parameter, i, p, 2, Knots);
+        Standard_Real Second = BasisFunctionDerivative(parameter, j, p, 2, Knots);
 
         AbsResult += First * Second;
     }
-    return AbsResult;
+    return AbsResult * StepParameter;
 
     //// 创建积分上下文
-    //BasisDerivativeIntegralContext context(i, p, k, Knots);
+    //BasisDerivativeIntegralContext context(i, j, p, k, Knots);
 
     //// 创建高斯积分函数对象并设置回调
     //CPnts_MyGaussFunction gaussFunction;
@@ -429,7 +338,7 @@ Standard_Real CurveFair::ComputeDerivativeIntegral(
     //    gaussFunction,
     //    lowerBound,
     //    upperBound,
-    //    59,
+    //    30,
     //    tol
     //);
     //return Abs(integrator.Value());
@@ -467,21 +376,28 @@ Standard_Real CurveFair::DerivativeSquaredThirdCallback(const Standard_Real u, c
         static_cast<BasisDerivativeIntegralContext*>(theAddress);
 
     Standard_Integer i = context->i;
+    Standard_Integer j = context->j;
+
     Standard_Integer p = context->p;
     Standard_Integer DerivateK = context->k;
+
     std::vector<Standard_Real> Knots = context->Knots;
 
     Standard_Real fu = f(u);
     Standard_Real fu_1 = f(u, 1);
     Standard_Real fu_2 = f(u, 2);
     Standard_Real fu_3 = f(u, 3);
-    Standard_Real Nj3_3 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-    Standard_Real Nj3_2 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-    Standard_Real Nj3_1 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+    Standard_Real Ni3_3 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+    Standard_Real Ni3_2 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+    Standard_Real Ni3_1 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
 
-    Standard_Real Mi = Nj3_3 * pow(fu_1, 3) + 3 * Nj3_2 * fu_1 * fu_1 + Nj3_1 * fu_3;
+    Standard_Real Nj3_3 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
+    Standard_Real Nj3_2 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
+    Standard_Real Nj3_1 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
+    Standard_Real Mi = Ni3_3 * pow(fu_1, 3) + 3 * Ni3_2 * fu_1 * fu_2 + Ni3_1 * fu_3;
+    Standard_Real Mj = Nj3_3 * pow(fu_1, 3) + 3 * Nj3_2 * fu_1 * fu_2 + Nj3_1 * fu_3;
     // 返回导数
-    return Mi;
+    return Mi * Mj;
 }
 
 // To compute the value of a b-spline basic function value 
@@ -581,21 +497,17 @@ Standard_Real CurveFair::BasisFunctionDerivative(const Standard_Real u, const St
     // 计算第一项: (p / (u_{i+p} - u_i)) * N^{(k-1)}_{i,p-1}
     Standard_Real Term1 = 0.0;
     Standard_Real Denominator1 = Knots[i + p] - Knots[i];
-    if (std::abs(Denominator1) > 1e-10)
+    if (std::abs(Denominator1) > std::numeric_limits<Standard_Real>::epsilon())
     {
-        Standard_Real coef1 = p / Denominator1;
-        Standard_Real BasisDerivative = BasisFunctionDerivative(u, i, p - 1, k - 1, Knots);
-        Term1 = coef1 * BasisDerivative;
+        Term1 = (p / Denominator1) * BasisFunctionDerivative(u, i, p - 1, k - 1, Knots);
     }
 
     // 计算第二项: (p / (u_{i+p+1} - u_{i+1})) * N^{(k-1)}_{i+1,p-1}
     Standard_Real Term2 = 0.0;
     Standard_Real Denominator2 = Knots[i + p + 1] - Knots[i + 1];
-    if (std::abs(Denominator2) > 1e-10)
+    if (std::abs(Denominator2) > std::numeric_limits<Standard_Real>::epsilon())
     {
-        Standard_Real coef2 = p / Denominator2;
-        Standard_Real BasisDerivative = BasisFunctionDerivative(u, i + 1, p - 1, k - 1, Knots);
-        Term2 = coef2 * BasisDerivative;
+        Term2 = (p / Denominator2) * BasisFunctionDerivative(u, i + 1, p - 1, k - 1, Knots);
     }
 
     // 根据公式计算k阶导数
@@ -669,23 +581,175 @@ Standard_Real CurveFair::GetCurveCurveHausdorffDistance(const Handle(Geom_BSplin
         {
             minDistance = std::min(minDistance, projector.Distance(i));
         }
-          
+
         HausdorffDistance = std::max(HausdorffDistance, minDistance);
     }
     return HausdorffDistance;
 }
-
-void CurveFair::Perform(const Handle(Geom_BSplineCurve)& theCurve)
+Handle(Geom_BSplineCurve) CurveFair::ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol)
 {
-    ComputeInnerByArcReparam(theCurve);
-    M = ComputeEnergyMatrix(m_OriginalCurve, m_OriginalCurve->Degree(), k);
-    TColgp_Array1OfPnt Poles = theCurve->Poles();
-    Standard_Integer n = theCurve->NbPoles();
-    Eigen::MatrixXd V(n, n);
-    V.setIdentity();  // 初始化V为单位矩阵
+    // bspline属性
+    Standard_Real firstParam = theCurve->FirstParameter();
+    Standard_Real lastParam = theCurve->LastParameter();
 
+    auto bsplineKnots = theCurve->Knots();
+    const Standard_Integer LOWER = bsplineKnots.Lower();
+    const Standard_Integer UPPER = bsplineKnots.Upper();
+
+    // bspline: 计算弧长
+    GeomAdaptor_Curve curveAdapter(theCurve);
+    Standard_Real bsplineLen = 0;
+    Standard_Real avgLen = 0;
+    Standard_Real paramStep = 0;
+    try
+    {
+        bsplineLen = GCPnts_AbscissaPoint::Length(curveAdapter, firstParam, lastParam, tol);
+        avgLen = bsplineLen / (paraNum - 1.0);
+        paramStep = (lastParam - firstParam) / (paraNum - 1.0);
+    }
+    catch (const Standard_Failure& e)
+    {
+        std::cerr << "OpenCASCADE Exception: " << e.GetMessageString() << std::endl;
+        return nullptr;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Standard Exception: " << e.what() << std::endl;
+        return nullptr;
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown Exception occurred!" << std::endl;
+        return nullptr;
+    }
+
+
+    // 弧长参数化: 计算新的节点向量
+    TColStd_Array1OfReal reparamKnots(LOWER, LOWER + paraNum - 1);
+    TColgp_Array1OfPnt reparamPoints(LOWER, LOWER + paraNum - 1);
+    reparamKnots.SetValue(LOWER, firstParam);
+    reparamPoints.SetValue(LOWER, gp_Pnt(firstParam, firstParam, firstParam));
+
+    Standard_Real curLen = 0.0;
+    Standard_Real curParam = firstParam;
+    for (Standard_Integer i = LOWER + 1; i < paraNum; i++)
+    {
+        curLen += avgLen;
+
+        curParam += paramStep;
+
+        GCPnts_AbscissaPoint gap(curveAdapter, curLen, firstParam);
+        Standard_Real tparam = gap.Parameter();
+
+        reparamKnots.SetValue(i, curParam);
+        reparamPoints.SetValue(i, gp_Pnt(tparam, tparam, tparam));
+    }
+    reparamKnots.SetValue(paraNum, lastParam);
+    reparamPoints.SetValue(paraNum, gp_Pnt(lastParam, lastParam, lastParam));
+
+    // 为每一个点，添加参数
+    fitPoints = reparamPoints;
+    /*fitParams = reparamKnots;*/
+    inner = GeomAPI_PointsToBSpline(
+        reparamPoints,
+        reparamKnots,
+        theCurve->Degree(),
+        theCurve->Degree(),
+        GeomAbs_C0,
+        1e-7
+    );
+
+    return inner;
+}
+
+//Handle(Geom_BSplineCurve) CurveFair::ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol)
+//{
+//    // 获取原始曲线的参数范围
+//    Standard_Real firstParam = theCurve->FirstParameter();
+//    Standard_Real lastParam = theCurve->LastParameter();
+//
+//    // 计算原始曲线的总弧长
+//    GeomAdaptor_Curve curveAdapter(theCurve);
+//    Standard_Real bsplineLen = 0;
+//    try
+//    {
+//        bsplineLen = GCPnts_AbscissaPoint::Length(curveAdapter, firstParam, lastParam, tol);
+//    }
+//    catch (const Standard_Failure& e)
+//    {
+//        std::cerr << "OpenCASCADE Exception: " << e.GetMessageString() << std::endl;
+//        return nullptr;
+//    }
+//    catch (const std::exception& e)
+//    {
+//        std::cerr << "Standard Exception: " << e.what() << std::endl;
+//        return nullptr;
+//    }
+//    catch (...)
+//    {
+//        std::cerr << "Unknown Exception occurred!" << std::endl;
+//        return nullptr;
+//    }
+//
+//    // 等弧长采样
+//    Standard_Real avgLen = bsplineLen / (paraNum - 1.0);
+//    TColgp_Array1OfPnt reparamPoints(1, paraNum); // 存储采样点
+//    TColStd_Array1OfReal reparamParams(1, paraNum); // 存储弧长参数
+//
+//    for (Standard_Integer i = 1; i <= paraNum; i++)
+//    {
+//        Standard_Real curLen = avgLen * (i - 1); // 目标弧长
+//
+//        // 根据弧长找到对应的参数
+//        GCPnts_AbscissaPoint gap(curveAdapter, curLen, firstParam);
+//        if (!gap.IsDone()) {
+//            std::cerr << "Failed to compute abscissa point for length: " << curLen << std::endl;
+//            return nullptr;
+//        }
+//        Standard_Real tparam = gap.Parameter();
+//
+//        // 获取曲线在参数 tparam 处的几何点
+//        gp_Pnt P;
+//        theCurve->D0(tparam, P);
+//        reparamPoints.SetValue(i, P);
+//        reparamParams.SetValue(i, curLen); // 参数设为弧长
+//    }
+//
+//    // 使用采样点和弧长参数重新插值
+//    
+//    inner = GeomAPI_PointsToBSpline(
+//        reparamPoints,
+//        reparamParams,
+//        theCurve->Degree(),
+//        theCurve->Degree(),
+//        GeomAbs_C0,
+//        1e-7
+//    );
+//
+//    return inner;
+//}
+Eigen::MatrixXd CurveFair::ComputeEnergyMatrix(
+    const Handle(Geom_BSplineCurve)& theBSplineCurve,
+    const Standard_Integer p,
+    const Standard_Integer k,
+    const Standard_Real tol)
+{
+    // 控制点个数
+    Standard_Integer n = theBSplineCurve->NbPoles();
+    // 控制点
+    TColgp_Array1OfPnt Poles = theBSplineCurve->Poles();
+
+    // 节点向量
+    std::vector<Standard_Real> Knots;
+    for (Standard_Integer index = theBSplineCurve->KnotSequence().Lower(); index <= theBSplineCurve->KnotSequence().Upper(); index++)
+        Knots.push_back(theBSplineCurve->KnotSequence().Value(index));
+
+    // 计算 M 矩阵
+    Eigen::MatrixXd M(n, n);
+    M.setZero();
+
+    // 原始控制点
     Eigen::MatrixXd D0(n, 3);
-    Eigen::MatrixXd D(n, 3);
     for (Standard_Integer i = 0; i < n; i++)
     {
         D0(i, 0) = Poles.Value(i + 1).X();
@@ -693,62 +757,145 @@ void CurveFair::Perform(const Handle(Geom_BSplineCurve)& theCurve)
         D0(i, 2) = Poles.Value(i + 1).Z();
     }
 
-    m_ResultCurve = GetCurrentFairCurve(theCurve, M, V, D0,D, alpha);
-    Iterator(D0, D);
-}
+    // 计算当前曲线的弧长参数化f(t)
+    ComputeInnerByArcReparam(theBSplineCurve);
 
-void CurveFair::Iterator(Eigen::MatrixXd D0, Eigen::MatrixXd D)
-{
-    // 分步移动参数
-    int n = D0.rows();
-    Eigen::MatrixXd currentD = D0;
-    Standard_Real stepSize = 50;
-    Standard_Integer stepCnt = 0;
-    bool reached = Standard_False;
-    Standard_Real ContorlPointOffset;
-    Standard_Real LastControlPointOffset = ControlPointOffsetTol;
-    int cnt = 0;
-    do
+    //-------------------------------------------------------------------------------
+    //                             验证基函数求导公式（正确）
+    //-------------------------------------------------------------------------------
+
+       // 测试参数 u
+   Standard_Real u = 0.5; // 测试参数
+
+   // 使用OCCT计算导数
+   gp_Vec occtDerivative1 = theBSplineCurve->DN(u, 1); // 一阶导数
+   gp_Vec occtDerivative2 = theBSplineCurve->DN(u, 2); // 二阶导数
+
+   // 使用基函数计算导数
+   gp_Vec basisDerivative1(0.0, 0.0, 0.0);
+   gp_Vec basisDerivative2(0.0, 0.0, 0.0);
+   for (Standard_Integer i = 0; i < n; i++)
+   {
+       Standard_Real basisDeriv1 = BasisFunctionDerivative(u, i, p, 1, Knots);
+       Standard_Real basisDeriv2 = BasisFunctionDerivative(u, i, p, 2, Knots);
+       gp_Pnt pole = theBSplineCurve->Pole(i + 1);
+       basisDerivative1 += gp_Vec(pole.X(), pole.Y(), pole.Z()) * basisDeriv1;
+       basisDerivative2 += gp_Vec(pole.X(), pole.Y(), pole.Z()) * basisDeriv2;
+   }
+
+   // 打印结果
+   std::cout << "OCCT 1st Derivative: " << occtDerivative1.X() << ", " << occtDerivative1.Y() << ", " << occtDerivative1.Z() << std::endl;
+   std::cout << "Basis 1st Derivative: " << basisDerivative1.X() << ", " << basisDerivative1.Y() << ", " << basisDerivative1.Z() << std::endl;
+   std::cout << "OCCT 2nd Derivative: " << occtDerivative2.X() << ", " << occtDerivative2.Y() << ", " << occtDerivative2.Z() << std::endl;
+   std::cout << "Basis 2nd Derivative: " << basisDerivative2.X() << ", " << basisDerivative2.Y() << ", " << basisDerivative2.Z() << std::endl;
+
+   Eigen::MatrixXd Basis1(n, 1);
+   Eigen::MatrixXd Basis2(n, 1);
+   Eigen::MatrixXd Basis3(n, 1);
+   Basis1.setZero();
+   Basis2.setZero();
+   Basis3.setZero();
+   Standard_Real FirstParameter = Knots[0];
+   Standard_Real LastParameter = Knots[Knots.size() - 1];
+   Standard_Real StepParameter = (LastParameter - FirstParameter) / 50;
+   for (Standard_Real u = FirstParameter; u <= LastParameter; u += StepParameter)
+   {
+       Standard_Real newU = f(u);
+       Standard_Real u1 = f(u, 1);
+       Standard_Real u2 = f(u, 2);
+       Standard_Real u3 = f(u, 3);
+
+       for (Standard_Integer i = 0; i < n; i++)
+       {
+           Standard_Real BasisDerivate1 = BasisFunctionDerivative(newU, i, p, 1, Knots) * u1;
+           Basis1(i, 0) = BasisDerivate1;
+
+           Standard_Real BasisDerivate2 = BasisFunctionDerivative(newU, i, p, 2, Knots) * u1 * u1 + BasisFunctionDerivative(newU, i, p, 1, Knots) * u2;
+           Basis2(i, 0) = BasisDerivate2;
+
+           Standard_Real BasisDerivate3 = BasisFunctionDerivative(newU, i, p, 3, Knots) * u1 * u1 * u1 + 
+               3 * BasisFunctionDerivative(newU, i, p, 2, Knots) * u1 * u2 + 
+               BasisFunctionDerivative(newU, i, p, 1, Knots) * u3;
+           Basis3(i, 0) = BasisDerivate3;
+
+           //Standard_Real BasisDerivate1 = BasisFunctionDerivative(newU, i, p, 1, Knots);
+           //Basis1(i, 0) = BasisDerivate1;
+
+           //Standard_Real BasisDerivate2 = BasisFunctionDerivative(newU, i, p, 2, Knots);
+           //Basis2(i, 0) = BasisDerivate2;
+
+           //Standard_Real BasisDerivate3 = BasisFunctionDerivative(newU, i, p, 3, Knots);
+           //Basis3(i, 0) = BasisDerivate3;
+       }
+
+       Eigen::MatrixXd Temp1 = D0.transpose() * Basis1;
+       Eigen::MatrixXd Temp2 = D0.transpose() * Basis2;
+       Eigen::MatrixXd Temp3 = D0.transpose() * Basis3;
+
+       gp_Vec Derivate1 = gp_Vec(Temp1(0, 0), Temp1(1, 0), Temp1(2, 0));
+       gp_Vec Derivate2 = gp_Vec(Temp2(0, 0), Temp2(1, 0), Temp2(2, 0));
+       gp_Vec Derivate3 = gp_Vec(Temp3(0, 0), Temp3(1, 0), Temp3(2, 0));
+
+       // 基于弧长参数化
+       gp_Vec StandardDerivateVector1 = theBSplineCurve->DN(newU, 1) * u1;
+       gp_Vec StandardDerivateVector2 = theBSplineCurve->DN(newU, 2) * u1 * u1 + theBSplineCurve->DN(newU, 1) * u2;
+       gp_Vec StandardDerivateVector3 = theBSplineCurve->DN(newU, 3) * u1 * u1 * u1 + theBSplineCurve->DN(newU, 2) * u1 * u2 + theBSplineCurve->DN(newU, 1) * u3;
+
+       // 基于原始曲线
+       /*gp_Vec StandardDerivateVector1 = theBSplineCurve->DN(newU, 1);
+       gp_Vec StandardDerivateVector2 = theBSplineCurve->DN(newU, 2);
+       gp_Vec StandardDerivateVector3 = theBSplineCurve->DN(newU, 3);*/
+
+       std::cout << "基函数求得一阶导数: " << format_as(Derivate1) << std::endl;
+       std::cout << "基函数求得二阶导数: " << format_as(Derivate2) << std::endl;
+       std::cout << "基函数求得三阶导数: " << format_as(Derivate3) << std::endl;
+       std::cout << "直接基于曲线的一阶导数: " << format_as(StandardDerivateVector1) << std::endl;
+       std::cout << "直接基于曲线的二阶导数: " << format_as(StandardDerivateVector2) << std::endl;
+       std::cout << "直接基于曲线的三阶导数: " << format_as(StandardDerivateVector3) << std::endl;
+       std::cout << "弧长参数化求得曲率(修正): " << Derivate2.Magnitude() / Derivate1.Magnitude() / Derivate1.Magnitude() << std::endl;
+       std::cout << "公式求解曲率:" << MathTool::ComputeCurveCurvature(theBSplineCurve, newU) << std::endl;
+       std::cout << "曲率比值:" << Derivate2.Magnitude() / MathTool::ComputeCurveCurvature(theBSplineCurve, newU) << std::endl;
+       std::cout << "公式求解曲率变化率:" << MathTool::ComputeCurveCurvatureDerivative(theBSplineCurve, newU) << std::endl;
+       std::cout << "曲率变化率比值:" << Derivate3.Magnitude() / MathTool::ComputeCurveCurvatureDerivative(theBSplineCurve, newU) << std::endl;
+
+       std::cout << "------------------------------------------------------------------------" << std::endl;
+
+       //if (std::abs(Derivate2.Magnitude() - StandardDerivateVector2.Magnitude()) > 0.01)
+       //{
+       //    std::cout << "Error::二阶导数不相等" << std::endl;
+       //}
+       //if (std::abs(Derivate3.Magnitude() - StandardDerivateVector3.Magnitude()) > 0.01)
+       //{
+       //    std::cout << "Error::二阶导数不相等" << std::endl;
+       //}
+       
+   }
+
+   // 计算 M 矩阵, 只填充 1 到 (n - 1)的控制点
+
+   for (Standard_Integer i = 0; i < n; ++i)
     {
-        // 计算下一步的位置
-        currentD +=  (D - D0) / stepSize;
-        cnt++;
-        // 固定首尾控制点
-        currentD.row(0) << FirstPole.X(), FirstPole.Y(), FirstPole.Z();
-        currentD.row(n - 1) << LastPole.X(), LastPole.Y(), LastPole.Z();
-
-
-        // 生成新曲线
-        m_ResultCurve = CreateNewBSplineCurve(m_OriginalCurve, currentD);
-        ComputeInnerByArcReparam(m_ResultCurve);
-        M = ComputeEnergyMatrix(m_OriginalCurve, m_OriginalCurve->Degree(), k);
-        Eigen::MatrixXd V(n, n);
-        V.setIdentity();
-        m_ResultCurve = GetCurrentFairCurve(m_ResultCurve, M, V, D0, D, alpha);
-        ContorlPointOffset = GetControlPointsOffset(m_OriginalCurve->Poles(), m_ResultCurve->Poles());
-        if (ContorlPointOffset > ControlPointOffsetTol || cnt == stepSize)
+        for (Standard_Integer j = 0; j < n; ++j)
         {
-            break;
+            Standard_Real integral = ComputeDerivativeIntegral(Knots, i, j, p, k, tol);
+            M(i, j) = integral;
+
+            // M(i, j)为对称矩阵
+            if (i != j)
+            {
+                M(j, i) = M(i, j);
+            }
         }
+    }
 
-    } while (Standard_True);
+    return M;
 }
-
-
-std::string to_string(Standard_Real value, Standard_Integer precision) 
-{
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(precision) << value;
-    return oss.str();
-}
-
 Handle(Geom_BSplineCurve) CurveFair::GetCurrentFairCurve(const Handle(Geom_BSplineCurve)& theCurve, Eigen::MatrixXd M, Eigen::MatrixXd V, Eigen::MatrixXd D0, Eigen::MatrixXd& D, Standard_Real alpha)
 {
     Standard_Real ContorlPointOffset;
     Standard_Real CurveHausdorffDistance;
     Standard_Integer cnt = 0;
     Standard_Integer n = D0.rows();
-    Handle(Geom_BSplineCurve) ResultCurve;
     Standard_Real LastControlPointOffset = ControlPointOffsetTol;
     do
     {
@@ -772,9 +919,9 @@ Handle(Geom_BSplineCurve) CurveFair::GetCurrentFairCurve(const Handle(Geom_BSpli
         //std::cout << "D" << std::endl << format_as(D) << std::endl;
 
 
-        ResultCurve = CreateNewBSplineCurve(theCurve, D);
-        ContorlPointOffset = GetControlPointsOffset(theCurve->Poles(), ResultCurve->Poles());
-        CurveHausdorffDistance = GetCurveCurveHausdorffDistance(ResultCurve, theCurve);
+        Handle(Geom_BSplineCurve) ResultCurve = CreateNewBSplineCurve(m_OriginalCurve, D);
+        ContorlPointOffset = GetControlPointsOffset(m_OriginalCurve->Poles(), ResultCurve->Poles());
+        CurveHausdorffDistance = GetCurveCurveHausdorffDistance(m_OriginalCurve, ResultCurve);
         //std::cout << "Cnt:" << cnt << std::endl;
         //std::cout << "Alpha:" << alpha << std::endl;
         //std::cout << "HausdorffDistance:" << CurveHausdorffDistance << std::endl;
@@ -801,4 +948,71 @@ Handle(Geom_BSplineCurve) CurveFair::GetCurrentFairCurve(const Handle(Geom_BSpli
         LastControlPointOffset = ContorlPointOffset;
     } while (Standard_True);
 }
- 
+
+void CurveFair::Iterator(Eigen::MatrixXd D0, Eigen::MatrixXd D)
+{
+    // 分步移动参数
+    int n = D0.rows();
+    Standard_Real stepSize = 10;
+    Standard_Integer stepCnt = 0;
+    Standard_Real ContorlPointOffset;
+    Standard_Real LastControlPointOffset = ControlPointOffsetTol;
+    while (Standard_True)
+    {
+        // 计算下一步的位置
+        D0 += (D - D0) / stepSize;
+        stepCnt++;
+        // 固定首尾控制点
+        D0.row(0) << FirstPole.X(), FirstPole.Y(), FirstPole.Z();
+        D0.row(n - 1) << LastPole.X(), LastPole.Y(), LastPole.Z();
+
+        // 生成新曲线
+        Handle(Geom_BSplineCurve) aCurve = CreateNewBSplineCurve(m_OriginalCurve, D0);
+        ComputeInnerByArcReparam(aCurve);
+        M = ComputeEnergyMatrix(aCurve, m_OriginalCurve->Degree(), k);
+
+        Eigen::MatrixXd V(n, n);
+        V.setIdentity();
+
+        aCurve = GetCurrentFairCurve(aCurve, M, V, D0, D, alpha);
+        ContorlPointOffset = GetControlPointsOffset(m_OriginalCurve->Poles(), aCurve->Poles());
+        if (ContorlPointOffset > ControlPointOffsetTol || stepCnt == stepSize)
+        {
+            break;
+        }
+        else
+        {
+            m_ResultCurve = aCurve;
+        }
+    }
+}
+
+void CurveFair::Perform(const Handle(Geom_BSplineCurve)& theCurve)
+{
+    ComputeInnerByArcReparam(theCurve);
+    M = ComputeEnergyMatrix(m_OriginalCurve, m_OriginalCurve->Degree(), k);
+    TColgp_Array1OfPnt Poles = theCurve->Poles();
+    Standard_Integer n = theCurve->NbPoles();
+    Eigen::MatrixXd V(n, n);
+    V.setIdentity();  // 初始化V为单位矩阵
+
+    Eigen::MatrixXd D0(n, 3);
+    Eigen::MatrixXd D(n, 3);
+    for (Standard_Integer i = 0; i < n; i++)
+    {
+        D0(i, 0) = Poles.Value(i + 1).X();
+        D0(i, 1) = Poles.Value(i + 1).Y();
+        D0(i, 2) = Poles.Value(i + 1).Z();
+    }
+
+    m_ResultCurve = GetCurrentFairCurve(theCurve, M, V, D0, D, alpha);
+    Iterator(D0, D);
+}
+
+std::string to_string(Standard_Real value, Standard_Integer precision)
+{
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str();
+}
+

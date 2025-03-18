@@ -725,7 +725,7 @@ TopoDS_Shape createSurface(const QString& surfaceType)
     // Return an empty shape if the curve type is not recognized
     return TopoDS_Shape();
 }
-occQt::occQt(QWidget *parent)
+occQt::occQt(QWidget* parent)
     : QMainWindow(parent)
 {
     ui.setupUi(this);
@@ -744,7 +744,7 @@ occQt::~occQt()
 
 }
 
-void occQt::createActions( void )
+void occQt::createActions(void)
 {
     // File
     connect(ui.actionExit, SIGNAL(triggered()), this, SLOT(close()));
@@ -777,11 +777,11 @@ void occQt::createActions( void )
     connect(ui.actionAbout, SIGNAL(triggered()), this, SLOT(about()));
 }
 
-void occQt::createMenus( void )
+void occQt::createMenus(void)
 {
 }
 
-void occQt::createToolBars( void )
+void occQt::createToolBars(void)
 {
     QToolBar* aToolBar;
     //aToolBar = addToolBar(tr("&Navigate"));
@@ -814,25 +814,28 @@ void occQt::createToolBars( void )
     //aToolBar->addAction(ui.actionAbout);
 }
 Handle(Geom_BSplineCurve) IterateApproximate
-(std::vector<Standard_Real>& InsertKnots, 
-    const std::vector<gp_Pnt>& Pnts, 
-    std::vector<Standard_Real>& PntsParams, 
-    std::vector<Standard_Real>& InitKnots, 
-    Standard_Integer degree, 
-    Standard_Integer MaxIterNum, 
+(std::vector<Standard_Real>& InsertKnots,
+    const std::vector<gp_Pnt>& Pnts,
+    std::vector<Standard_Real>& PntsParams,
+    std::vector<Standard_Real>& InitKnots,
+    Standard_Integer degree,
+    Standard_Integer MaxIterNum,
     Standard_Real toler);
 
 std::vector<Standard_Real> ComputeUniformParam(Standard_Integer numSamples, Standard_Real left, Standard_Real right);
 std::vector<Standard_Real> KnotGernerationByParams(const std::vector<Standard_Real>& params, Standard_Integer n, Standard_Integer p);
 void createBSplineCurves()
 {
+    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(MathTool::CreateCircleApproximation(10));
+    BRepTools::Write(edge, "curve.brep");
+
     // 圆的参数
     Standard_Real radius = 10.0;    // 半径
     Standard_Real startAngle = 0.0; // 起始角度（0度）
-    Standard_Real endAngle = 3 * M_PI / 2; // 四分之三圆 (270度)
+    Standard_Real endAngle = 2 * M_PI; // 四分之三圆 (270度)
 
     // 选择B-spline的控制点
-    Standard_Integer numPoints = 5;  // 控制点的数量
+    Standard_Integer numPoints = 10;  // 控制点的数量
     std::vector<gp_Pnt> intersectionPoints;
     // 随机数生成器（用于扰动）
     std::random_device rd;
@@ -840,7 +843,7 @@ void createBSplineCurves()
     std::uniform_real_distribution<Standard_Real> perturbation(-100, 100); // 设定扰动范围
     // 计算控制点
 
-    for (Standard_Integer i = 0; i < numPoints; ++i) 
+    for (Standard_Integer i = 0; i < numPoints; ++i)
     {
         Standard_Real angle = startAngle + i * (endAngle - startAngle) / (numPoints - 1);
         Standard_Real x;
@@ -853,8 +856,8 @@ void createBSplineCurves()
         //}
         //else
         //{
-            x = radius * cos(angle);
-            y = radius * sin(angle);
+        x = radius * cos(angle);
+        y = radius * sin(angle);
         //}
 
         intersectionPoints.push_back(gp_Pnt(x, y, 0.0));
@@ -868,13 +871,13 @@ void createBSplineCurves()
     // 执行插值计算
     interpolate.Perform();
     // 检查是否成功完成插值
-    if (interpolate.IsDone())
-    {
-        // 获取插值后的曲线对象
-        Handle(Geom_BSplineCurve) aQuarterCircle = interpolate.Curve();
-        TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(aQuarterCircle);
-        BRepTools::Write(edge, "aQuarterCircle.brep");
-    }
+    //if (interpolate.IsDone())
+    //{
+    //    // 获取插值后的曲线对象
+    //    Handle(Geom_BSplineCurve) aQuarterCircle = interpolate.Curve();
+    //    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(aQuarterCircle);
+    //    BRepTools::Write(edge, "curve.brep");
+    //}
     // 定义一系列点来创建折线段
     TColgp_Array1OfPnt LinePoints(1, 5); // 创建一个包含5个点的数组
     LinePoints.SetValue(1, gp_Pnt(0, 0, 0));
@@ -887,10 +890,10 @@ void createBSplineCurves()
     GeomAPI_PointsToBSpline converter(LinePoints, 1, 1, GeomAbs_C1, 0.001);
     // 获取生成的BSpline曲线
     Handle(Geom_BSplineCurve) aLine = converter.Curve();
-    TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(aLine);
+    edge = BRepBuilderAPI_MakeEdge(aLine);
     BRepTools::Write(edge, "aLine.brep");
 }
-std::vector<TopoDS_Edge> GetBSplineCurveD1(Handle(Geom_BSplineCurve) &theCurve, Standard_Integer theDiscreteNum)
+std::vector<TopoDS_Edge> GetBSplineCurveD1(Handle(Geom_BSplineCurve)& theCurve, Standard_Integer theDiscreteNum)
 {
     Standard_Real aFirstParameter = theCurve->FirstParameter();
     Standard_Real aLastParameter = theCurve->LastParameter();
@@ -975,6 +978,7 @@ Standard_Real GetControlPointAverageDistance(std::vector<gp_Pnt> thePntArray)
 
 void occQt::about()
 {
+    createBSplineCurves();
     myOccView->getContext()->EraseAll(Standard_True);
     std::vector<Handle(Geom_BSplineCurve)> aCurveArray;
     SurfaceModelingTool::LoadBSplineCurves("curve.step", aCurveArray);
@@ -1012,6 +1016,7 @@ void occQt::about()
             for (int i = 0; i < aCurveArray.size(); i++)
             {
                 auto curve = aCurveArray[i];
+                std::cout << format_as(curve) << std::endl;
                 if (curve->Degree() < 3)
                 {
                     curve->IncreaseDegree(3);
@@ -1020,17 +1025,20 @@ void occQt::about()
                 Visualize(curve, Quantity_NOC_GOLD);
                 Visualize(OccArrayConvertoVector(curve->Poles()), Quantity_NOC_GOLD);
                 if (i == 0)
+                {
                     CurveFair::ExportFilePath = curveFolderPath.toStdString() + "/Result/Result_New/";
-                if(i == 1)
+                }
+                if (i == 1)
+                {
                     CurveFair::ExportFilePath = curveFolderPath.toStdString() + "/Result/Result_Old/";
+                }
 
-                    SurfaceModelingTool::ExportBSplineCurves({ curve }, CurveFair::ExportFilePath  + "OriginalCurve.step");
-
+                SurfaceModelingTool::ExportBSplineCurves({ curve }, CurveFair::ExportFilePath + "OriginalCurve.step");
                 Standard_Real PointAverageDistance = GetControlPointAverageDistance(OccArrayConvertoVector(curve));
                 Standard_Real ControlPointOffset = PointAverageDistance;
                 Standard_Real alpha = 1e-3;
                 Standard_Integer k = 3;
-                for (ControlPointOffset; ControlPointOffset >= PointAverageDistance / 20 /*|| ControlPointOffset >= 0.01*/; ControlPointOffset /= 1.2)
+                for (ControlPointOffset; ControlPointOffset >= PointAverageDistance / 50 || ControlPointOffset >= 0.01; ControlPointOffset /= 1.2)
                 {
                     //CurveFair aCurveFairConstructor(curve, 100, k, alpha, ControlPointOffset, ControlPointOffset);
                     CurveFair aCurveFairConstructor(curve, 100, k, alpha, ControlPointOffset, ControlPointOffset);
@@ -1058,7 +1066,7 @@ void occQt::about()
 
     }
 
-    
+
 }
 
 
@@ -1075,7 +1083,7 @@ void occQt::importFile()
     }
     TopExp_Explorer exp;
     Standard_Integer cnt = 0;
-    for (exp.Init(shape, TopAbs_FACE); exp.More(); exp.Next()) 
+    for (exp.Init(shape, TopAbs_FACE); exp.More(); exp.Next())
     {
         if (!cnt) {
             shape1 = exp.Current();
@@ -1146,13 +1154,13 @@ void occQt::Triangulation()
         {
             for (size_t i = 0; i < faceList[j].size(); ++i)
             {
-                futures.push_back(std::async(std::launch::async, [&, j, i]() 
+                futures.push_back(std::async(std::launch::async, [&, j, i]()
                     {
-                    Handle(AIS_Shape) triShape = new AIS_Shape(faceList[j][i]);
-                    triShape->SetColor(Quantity_NOC_BISQUE);
-                    // 互斥锁,析构时自动解锁
-                    std::lock_guard<std::mutex> lock(displayMutex);
-                    myOccView->getContext()->Display(triShape, Standard_True);
+                        Handle(AIS_Shape) triShape = new AIS_Shape(faceList[j][i]);
+                        triShape->SetColor(Quantity_NOC_BISQUE);
+                        // 互斥锁,析构时自动解锁
+                        std::lock_guard<std::mutex> lock(displayMutex);
+                        myOccView->getContext()->Display(triShape, Standard_True);
                     }));
             }
         }
@@ -1201,21 +1209,21 @@ void occQt::TriangulationIntersection()
             for (R_TreeNode* node2 : potentialIntersectNodes)
             {
                 // 将每个求交操作作为一个异步任务
-                futures.push_back(std::async(std::launch::async, [&, currentNode, node2]() 
+                futures.push_back(std::async(std::launch::async, [&, currentNode, node2]()
                     {
-                    std::unique_lock<std::mutex> lock(sectionMutex);
-                    BRepAlgoAPI_Section section(currentNode->Face, node2->Face, Standard_True);
-                    section.ComputePCurveOn1(Standard_True);
-                    section.Approximation(Standard_True);
-                    section.Build();
-                    lock.unlock(); // 释放锁
+                        std::unique_lock<std::mutex> lock(sectionMutex);
+                        BRepAlgoAPI_Section section(currentNode->Face, node2->Face, Standard_True);
+                        section.ComputePCurveOn1(Standard_True);
+                        section.Approximation(Standard_True);
+                        section.Build();
+                        lock.unlock(); // 释放锁
 
-                    if (section.IsDone())
-                    {
-                        TopoDS_Shape intersectionLine = section.Shape();
-                        // 在这里不需要锁，因为builder.Add被假定为线程安全或对结果的影响不会造成冲突
-                        builder.Add(result, intersectionLine);
-                    }
+                        if (section.IsDone())
+                        {
+                            TopoDS_Shape intersectionLine = section.Shape();
+                            // 在这里不需要锁，因为builder.Add被假定为线程安全或对结果的影响不会造成冲突
+                            builder.Add(result, intersectionLine);
+                        }
                     }));
             }
 
@@ -1323,7 +1331,7 @@ void occQt::RandomExport()
     QString string1 = QInputDialog::getText(nullptr, "Input", "Enter String 1: (Basic Model Type: plane, cone, cylinder, sphere, torus)", QLineEdit::Normal, "", &ok);
     QString string2 = QInputDialog::getText(nullptr, "Input", "Enter String 2: (Basic Model Type: plane, cone, cylinder, sphere, torus)", QLineEdit::Normal, "", &ok);
     Standard_Integer value = QInputDialog::getInt(nullptr, "Input", "Enter an Integer:", 0, 0, 100, 1, &ok);
-     
+
 
     // 使用用户输入调用RandomExport::randomRotateAndExport()
     RandomExport::randomRotateAndExport(folderPath.toStdString().c_str(), string1.toStdString().c_str(), string2.toStdString().c_str(), value);
@@ -1375,7 +1383,7 @@ void occQt::MakeSurface()
         {
             shape1 = shape;
         }
-        else 
+        else
         {
             shape2 = shape;
         }
@@ -1437,7 +1445,7 @@ void occQt::ExportFile()
 }
 
 // 对单条等参线进行等距采样并计算弧长
-std::vector<std::pair<gp_Pnt, Standard_Real>> SampleIsoCurveWithArcLength(const Handle(Geom_BSplineCurve)& bsplineCurve, Standard_Integer numSamples) 
+std::vector<std::pair<gp_Pnt, Standard_Real>> SampleIsoCurveWithArcLength(const Handle(Geom_BSplineCurve)& bsplineCurve, Standard_Integer numSamples)
 {
     Handle(GeomAdaptor_Curve) curve = new GeomAdaptor_Curve(bsplineCurve);
     GCPnts_QuasiUniformAbscissa sampler(*curve, numSamples);
@@ -1492,7 +1500,7 @@ Handle(Geom_BSplineSurface) GenerateCoonsSurface(
 
     // 尝试将 Geom_Surface 转换为 Geom_BSplineSurface
     Handle(Geom_BSplineSurface) bsplineSurface = Handle(Geom_BSplineSurface)::DownCast(surface);
-    if (bsplineSurface.IsNull()) 
+    if (bsplineSurface.IsNull())
     {
         throw std::runtime_error("生成的曲面不是 B-Spline 曲面！");
     }
@@ -1509,7 +1517,7 @@ void occQt::GenerateIsoCurves(void)
     for (Standard_Integer i = 1; i <= 45; i++)
     {
         occQt::isVisualize = Standard_False;
-        if (i ==23 || (i >= 42 && i <= 45) || i == 40) continue;;
+        if (i == 23 || (i >= 42 && i <= 45) || i == 40) continue;;
         myOccView->getContext()->RemoveAll(Standard_True);
         // 读入边界线
         std::vector<Handle(Geom_BSplineCurve)> tempArray;
@@ -1541,7 +1549,7 @@ void occQt::GenerateIsoCurves(void)
         MathTool::TrimInternalCurves(anInternalBSplineCurves, tempArray);
         occQt::isVisualize = Standard_True;
         Visualize(anInternalBSplineCurves);
-        if(tempArray.size() == 3)
+        if (tempArray.size() == 3)
         {
             // 初始化一个向量用于存储每条曲线的交点计数以及对应的样条曲线
             std::vector<std::pair<Standard_Integer, Handle(Geom_BSplineCurve)>> anInterCount =
@@ -1564,13 +1572,13 @@ void occQt::GenerateIsoCurves(void)
             }
 
             // 按交点计数从大到小对曲线进行排序
-            std::sort(anInterCount.begin(), anInterCount.end(), 
-                [](const std::pair<Standard_Integer, Handle(Geom_BSplineCurve)>& curve1, 
+            std::sort(anInterCount.begin(), anInterCount.end(),
+                [](const std::pair<Standard_Integer, Handle(Geom_BSplineCurve)>& curve1,
                     const std::pair<Standard_Integer, Handle(Geom_BSplineCurve)>& curve2)
-            {
-                return curve1.first < curve2.first;
-            });
-            
+                {
+                    return curve1.first < curve2.first;
+                });
+
             if (anInterCount[2].first >= 2)
             {
                 // 清空并重新调整tempArray，将交点最多的两条边作为u方向的边
@@ -1765,7 +1773,7 @@ void occQt::GenerateIsoCurves(void)
         if (SurfaceModelingTool::GetInternalCurves(aBoundarycurveArray, anInternalBSplineCurves, uInternalCurve, vInternalCurve, uAngleSum, vAngleSum, 5))
         {
             myOccView->getContext()->RemoveAll(Standard_True);
-            
+
             occQt::isVisualize = Standard_True;
             for (auto uCurve : uInternalCurve)
             {
@@ -1872,7 +1880,7 @@ void occQt::GenerateIsoCurves(void)
         Visualize(vISOcurvesArray_Initial, Quantity_NOC_WHITE);
 
         Visualize(uLoftingSur);
-        Visualize(vLoftingSur);        
+        Visualize(vLoftingSur);
         Visualize(uLoftingCurves, Quantity_NOC_RED);
         Visualize(vLoftingCurves, Quantity_NOC_RED);
         // 生成修正的等参线
@@ -2109,8 +2117,8 @@ void occQt::GenerateIsoCurves(void)
         std::vector<gp_Pnt> upoints, vpoints;
         std::vector<Standard_Real> uparams, vparams;
         Standard_Integer vIndex, uIndex;
-        vIndex = CurveOperate::isDegenerate(vISOcurvesArray_Final.front(),10) ? vISOcurvesArray_Final.size() - 1 : 0;
-        uIndex = CurveOperate::isDegenerate(uISOcurvesArray_Final.front(),10) ? uISOcurvesArray_Final.size() - 1 : 0;
+        vIndex = CurveOperate::isDegenerate(vISOcurvesArray_Final.front(), 10) ? vISOcurvesArray_Final.size() - 1 : 0;
+        uIndex = CurveOperate::isDegenerate(uISOcurvesArray_Final.front(), 10) ? uISOcurvesArray_Final.size() - 1 : 0;
         LogPrint::PrintInfo(vISOcurvesArray_Final);
         std::cout << "---------------------------------------------------" << std::endl;
         LogPrint::PrintInfo(uISOcurvesArray_Final);
@@ -2153,7 +2161,7 @@ void occQt::GenerateIsoCurves(void)
         vIsoExportFilename += "coons_";
         vIsoExportFilename += std::to_string(i);
         vIsoExportFilename += "_vIsoCurves.brep";
-        
+
         SurfaceModelingTool::ExportBSplineCurves(uISOcurvesArray_Final, uIsoExportFilename);
         SurfaceModelingTool::ExportBSplineCurves(vISOcurvesArray_Final, vIsoExportFilename);
         for (auto boundaryPoint : boundaryPoints)
@@ -2236,5 +2244,5 @@ void occQt::GenerateIsoCurves(void)
         tool.ContextToTxt("------------------------------\nV:");
         for (auto debugKnots : vKnots)
             tool.KnotsToTxt(debugKnots);
-        }
+    }
 }

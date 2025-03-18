@@ -24,15 +24,15 @@ public:
         for (Standard_Integer i = KnotArray.Lower(); i <= KnotArray.Upper(); i++)
         {
             myKnots.push_back(KnotArray.Value(i));
-
         }
         this->alpha = alpha;
         this->HausdorffDistanceTol = HausdorffDistanceTol;
-        this->ControlPointOffsetTol = ControlPointOffsetTol;
-        this->k = k;
+        this->ControlPointOffsetTol = ControlPointOffsetTol; // 控制点偏差
+        this->k = k; // 求 k 阶导数
+
         m_OriginalCurve = theBSplineCurve;
-        FirstPole = theBSplineCurve->Pole(1);
-        LastPole = theBSplineCurve->Pole(theBSplineCurve->NbPoles());
+        FirstPole = theBSplineCurve->Pole(1); // 第一个控制点
+        LastPole = theBSplineCurve->Pole(theBSplineCurve->NbPoles()); // 最后一个控制点
 
         Perform(m_OriginalCurve);
 
@@ -51,39 +51,39 @@ public:
 
     // 计算两点之间弧长
     Standard_Real GetLengthByParam(Standard_Real sParam, Standard_Real eParam, Standard_Real tol = 1e-7);
-    
+
     // 计算三阶导
     static Standard_Real GetCurvatureDerivativeSquare(const Standard_Real, const Standard_Address);
 
     Standard_Real CurveFair::GetCurveCurvature(const Handle(Geom_BSplineCurve) theCurve, const Standard_Real t);
     // 计算F
     Standard_Real GetFByGaussIntegral(const Standard_Real tol = 1e-6);
-    
+
     static Standard_Real OneBasicFun(
-        const Standard_Real u, 
-        const Standard_Integer i, 
-        const Standard_Integer p, 
+        const Standard_Real u,
+        const Standard_Integer i,
+        const Standard_Integer p,
         const std::vector<Standard_Real>& Knots);
 
     static Standard_Real BSplineBasis(
-        Standard_Integer u, 
-        Standard_Integer i, 
-        Standard_Real p, 
+        Standard_Integer u,
+        Standard_Integer i,
+        Standard_Real p,
         const std::vector<Standard_Real>& knots);
 
     static Standard_Real BasisFunctionDerivative(
         const Standard_Real u,
-        const Standard_Integer i, 
-        const Standard_Integer p, 
-        const Standard_Integer k, 
+        const Standard_Integer i,
+        const Standard_Integer p,
+        const Standard_Integer k,
         const std::vector<Standard_Real>& Knots);
 
     static Standard_Real DerivativeSquaredTwoCallback(
-        const Standard_Real u, 
-        const Standard_Address theAddress);    
+        const Standard_Real u,
+        const Standard_Address theAddress);
 
     static Standard_Real DerivativeSquaredThirdCallback(
-        const Standard_Real u, 
+        const Standard_Real u,
         const Standard_Address theAddress);
 
 
@@ -109,7 +109,7 @@ public:
 
     //  获取最新的控制点和原始控制点之间的距离
     Standard_Real GetControlPointsOffset(
-        const TColgp_Array1OfPnt theOriginalPoles, 
+        const TColgp_Array1OfPnt theOriginalPoles,
         const TColgp_Array1OfPnt theOperatePoles);
 
     // 创建新的 B 样条曲线
@@ -126,17 +126,17 @@ public:
 
     inline Handle(Geom_BSplineCurve) GetOuter() { return outer; }
     inline Handle(Geom_BSplineCurve) GetInner() { return inner; }
-    inline TColgp_Array1OfPnt GetFitPoint() { return fitPoints ;}
-    inline TColStd_Array1OfReal GetFitParam() { return fitParams;}
+    inline TColgp_Array1OfPnt GetFitPoint() { return fitPoints; }
+    inline TColStd_Array1OfReal GetFitParam() { return fitParams; }
 
     inline Handle(Geom_BSplineCurve) GetResult() { return m_ResultCurve; }
 public:
     static std::vector<Handle(Geom_BSplineCurve)> TempCurveArray;
     static std::string ExportFilePath;
+    static Handle(Geom_BSplineCurve) inner;
 private:
     Standard_Real paraNum;
     Handle(Geom_BSplineCurve) outer;
-    static Handle(Geom_BSplineCurve) inner;
     std::vector<Standard_Real> myKnots;
     TColStd_Array1OfReal fitParams;
     TColgp_Array1OfPnt fitPoints;
