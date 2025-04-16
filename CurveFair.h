@@ -1,14 +1,29 @@
 #ifndef CURVEFAIR_H
 #define CURVEFAIR_H
 
-#include<Geom_BSplineCurve.hxx>
-#include<vector>
-#include<string>
+#include <Geom_BSplineCurve.hxx>
+#include <GeomAPI_ProjectPointOnCurve.hxx>
+#include <GeomAPI_Interpolate.hxx>
+#include <vector>
+#include <string>
 #include <Eigen/Dense>
+#include <GeomAPI_PointsToBSpline.hxx>
+#include <Geom_BSplineCurve.hxx>
+#include <GeomAdaptor_Curve.hxx>
+#include <GCPnts_AbscissaPoint.hxx>
+#include <math_GaussSingleIntegration.hxx>
+#include <BRepPrim_FaceBuilder.hxx>
+#include <BRepTools.hxx>              // 用于读取 BRep 文件
+#include <BRep_Builder.hxx>           // 用于构建 BRep 数据
+#include <TopoDS_Shape.hxx>           // 用于表示几何形状
+#include <TopoDS_Edge.hxx>            // 用于表示边
+#include <TopExp_Explorer.hxx>        // 用于遍历几何形状的边
+#include <BRep_Tool.hxx>              // 用于提取边的几何表示
+#include <TopoDS.hxx>
 
 const Standard_Real HAUSDORFFDISTANCETOL = 10;
-const Standard_Real CONTROLPOINTOFFSETTOL = 100;
-const Standard_Real ALPHA = 1e-3;
+const Standard_Real CONTROLPOINTOFFSETTOL = 2;
+const Standard_Real ALPHA = 1;
 class CurveFair
 {
 public:
@@ -19,32 +34,40 @@ public:
         fitParams(outer->Knots().Lower(), outer->Knots().Lower() + paraNum - 1),
         fitPoints(outer->Knots().Lower(), outer->Knots().Lower() + paraNum - 1)
     {
-
-        TColStd_Array1OfReal KnotArray = theBSplineCurve->KnotSequence();
-        for (Standard_Integer i = KnotArray.Lower(); i <= KnotArray.Upper(); i++)
-        {
-            myKnots.push_back(KnotArray.Value(i));
-        }
+        myKnotSeq = ConvertToVector(theBSplineCurve->KnotSequence());
+        myKnots = ConvertToVector(theBSplineCurve->Knots());
         this->alpha = alpha;
         this->HausdorffDistanceTol = HausdorffDistanceTol;
         this->ControlPointOffsetTol = ControlPointOffsetTol; // 控制点偏差
-        this->k = k; // 求 k 阶导数
+        this->k = k;
 
         m_OriginalCurve = theBSplineCurve;
         FirstPole = theBSplineCurve->Pole(1); // 第一个控制点
         LastPole = theBSplineCurve->Pole(theBSplineCurve->NbPoles()); // 最后一个控制点
 
-        Perform(m_OriginalCurve);
+        CurveFair::TempInitialArray.clear();
+        CurveFair::TempResultArray.clear();
+        CurveFair::TempIteratorArray.clear();
 
+        Perform(m_OriginalCurve);
     }
+
+    std::vector<Standard_Real> ConvertToVector(TColStd_Array1OfReal OccArray)
+    {
+        std::vector<Standard_Real> VectorArray;
+        for (Standard_Integer i = OccArray.Lower(); i <= OccArray.Upper(); i++)
+        {
+            VectorArray.push_back(OccArray.Value(i));
+        }
+        return VectorArray;
+    }
+    Standard_Real f_inverse(const Handle(Geom_BSplineCurve)& theBSplineCurve, Standard_Real t);
 
     void Perform(const Handle(Geom_BSplineCurve)& theCurve);
 
     void Iterator(Eigen::MatrixXd D0, Eigen::MatrixXd D);
 
-    Handle(Geom_BSplineCurve) GetCurrentFairCurve(const Handle(Geom_BSplineCurve)& theCurve, Eigen::MatrixXd M, Eigen::MatrixXd V, Eigen::MatrixXd D0, Eigen::MatrixXd& D, Standard_Real alpha);
-    // 从文件中加载CurveFair
-    static std::vector<CurveFair> GetCurveFairsFromFile(const std::string& filePath, const Standard_Real paraNum = 101);
+    Handle(Geom_BSplineCurve) GetCurrentFairCurve(const Handle(Geom_BSplineCurve)& theCurve, Eigen::MatrixXd M, Eigen::MatrixXd V, Eigen::MatrixXd& D0, Eigen::MatrixXd& D, Standard_Real alpha);
 
     // 获取弧长参数化曲线
     Handle(Geom_BSplineCurve) ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol = 1e-7);
@@ -55,7 +78,6 @@ public:
     // 计算三阶导
     static Standard_Real GetCurvatureDerivativeSquare(const Standard_Real, const Standard_Address);
 
-    Standard_Real CurveFair::GetCurveCurvature(const Handle(Geom_BSplineCurve) theCurve, const Standard_Real t);
     // 计算F
     Standard_Real GetFByGaussIntegral(const Standard_Real tol = 1e-6);
 
@@ -64,12 +86,6 @@ public:
         const Standard_Integer i,
         const Standard_Integer p,
         const std::vector<Standard_Real>& Knots);
-
-    static Standard_Real BSplineBasis(
-        Standard_Integer u,
-        Standard_Integer i,
-        Standard_Real p,
-        const std::vector<Standard_Real>& knots);
 
     static Standard_Real BasisFunctionDerivative(
         const Standard_Real u,
@@ -86,11 +102,17 @@ public:
         const Standard_Real u,
         const Standard_Address theAddress);
 
-
     Standard_Real ComputeDerivativeIntegral(
         const std::vector<Standard_Real> Knots,
         const Standard_Integer i,
         const Standard_Integer j,
+        const Standard_Integer p,
+        const Standard_Integer k,
+        const Standard_Real tol = 1e-6);
+
+    Standard_Real ComputeDerivativeIntegral(
+        const std::vector<Standard_Real> Knots,
+        const Standard_Integer i,
         const Standard_Integer p,
         const Standard_Integer k,
         const Standard_Real tol = 1e-6);
@@ -100,12 +122,6 @@ public:
         const Standard_Integer p,
         const Standard_Integer k,
         const Standard_Real tol = 1e-6);
-
-    Eigen::Matrix3d GetNewControlPoints(
-        const Eigen::MatrixXd& M,       // 能量矩阵 M
-        const Eigen::MatrixXd& V,       // 对角矩阵 V
-        const Eigen::Matrix3d& D0,      // 原始控制点向量
-        const Standard_Real alpha);
 
     //  获取最新的控制点和原始控制点之间的距离
     Standard_Real GetControlPointsOffset(
@@ -131,13 +147,16 @@ public:
 
     inline Handle(Geom_BSplineCurve) GetResult() { return m_ResultCurve; }
 public:
-    static std::vector<Handle(Geom_BSplineCurve)> TempCurveArray;
+    static std::vector<Handle(Geom_BSplineCurve)> TempResultArray;
+    static std::vector<Handle(Geom_BSplineCurve)> TempInitialArray;
+    static std::vector<Handle(Geom_BSplineCurve)> TempIteratorArray;
     static std::string ExportFilePath;
     static Handle(Geom_BSplineCurve) inner;
 private:
     Standard_Real paraNum;
     Handle(Geom_BSplineCurve) outer;
     std::vector<Standard_Real> myKnots;
+    std::vector<Standard_Real> myKnotSeq;
     TColStd_Array1OfReal fitParams;
     TColgp_Array1OfPnt fitPoints;
     Handle(Geom_BSplineCurve) m_OriginalCurve;
@@ -151,5 +170,9 @@ private:
     Eigen::MatrixXd M;
     gp_Pnt FirstPole;
     gp_Pnt LastPole;
+    Eigen::MatrixXd V;
+    Standard_Real OriEnergy;
+    Standard_Real FairEnergy;
+
 };
 #endif

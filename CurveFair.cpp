@@ -1,28 +1,17 @@
-#include <GeomAPI_PointsToBSpline.hxx>
-#include <Geom_BSplineCurve.hxx>
-#include <GeomAdaptor_Curve.hxx>
-#include <GCPnts_AbscissaPoint.hxx>
-#include <math_GaussSingleIntegration.hxx>
-#include <BRepPrim_FaceBuilder.hxx>
-#include <BRepTools.hxx>              // ÓÃÓÚ¶ÁÈ¡ BRep ÎÄ¼ş
-#include <BRep_Builder.hxx>           // ÓÃÓÚ¹¹½¨ BRep Êı¾İ
-#include <TopoDS_Shape.hxx>           // ÓÃÓÚ±íÊ¾¼¸ºÎĞÎ×´
-#include <TopoDS_Edge.hxx>            // ÓÃÓÚ±íÊ¾±ß
-#include <TopExp_Explorer.hxx>        // ÓÃÓÚ±éÀú¼¸ºÎĞÎ×´µÄ±ß
-#include <BRep_Tool.hxx>              // ÓÃÓÚÌáÈ¡±ßµÄ¼¸ºÎ±íÊ¾
-#include <TopoDS.hxx>
-
-#include"curveFair.h"
+ï»¿#include "curveFair.h"
+#include "SurfaceModelingTool.h"
+#include "RealCompare.h"
 #include "../../OpenCASCADE-7.7.0-vc14-64/opencascade-7.7.0/src/CPnts/CPnts_AbscissaPoint.cxx"
-#include <RealCompare.h>
-#include <GeomAPI_ProjectPointOnCurve.hxx>
-#include <GeomAPI_Interpolate.hxx>
-#include <SurfaceModelingTool.h>
+#include <math.hxx>
 
-// ¶¨Òå¾²Ì¬³ÉÔ±±äÁ¿
-std::vector<Handle(Geom_BSplineCurve)> CurveFair::TempCurveArray;
+void UniformCurve(Handle(Geom_BSplineCurve)& curve);
+// å®šä¹‰é™æ€æˆå‘˜å˜é‡
+std::vector<Handle(Geom_BSplineCurve)> CurveFair::TempResultArray;
+std::vector<Handle(Geom_BSplineCurve)> CurveFair::TempInitialArray;
+std::vector<Handle(Geom_BSplineCurve)> CurveFair::TempIteratorArray;
 Handle(Geom_BSplineCurve) CurveFair::inner;
 std::string CurveFair::ExportFilePath;
+
 std::string format_as(Eigen::MatrixXd M)
 {
     std::stringstream ss;
@@ -98,50 +87,21 @@ std::string format_as(const std::vector<Handle(Geom_BSplineCurve)> theCurveArray
     return ss.str();
 }
 
-//// ´ÓÎÄ¼şÖĞÉú³ÉCurveFairÊı×é
-//std::vector<CurveFair> CurveFair::GetCurveFairsFromFile(const std::string& filePath, const Standard_Real paraNum)
-//{
-//    // »ñÈ¡ÎÄ¼şºó×º
-//    std::string extension = filePath.substr(filePath.find_last_of('.') + 1);
-//    TopoDS_Shape boundary;
-//    if (extension == "brep")
-//    {
-//        // ³õÊ¼»¯±ß½çShape
-//        BRep_Builder B1;
-//        // ´ÓÎÄ¼ş¶ÁÈ¡BRepÊı¾İ
-//        BRepTools::Read(boundary, filePath.c_str(), B1);
-//    }
-//
-//    // ±éÀúShapeÖĞµÄ±ß
-//    TopExp_Explorer explorer(boundary, TopAbs_EDGE);
-//    std::vector<CurveFair> cfArray;
-//    for (; explorer.More(); explorer.Next())
-//    {
-//        TopoDS_Edge edge = TopoDS::Edge(explorer.Current());
-//
-//        // »ñÈ¡±ßµÄ¼¸ºÎ±íÊ¾
-//        TopLoc_Location loc;
-//        Standard_Real first, last;
-//        Handle(Geom_Curve) gcurve = BRep_Tool::Curve(edge, loc, first, last);
-//        gcurve = Handle(Geom_Curve)::DownCast(gcurve->Copy());
-//
-//        Handle(Geom_BSplineCurve) aGeom_BSplineCurve = Handle(Geom_BSplineCurve)::DownCast(gcurve);
-//        if (!aGeom_BSplineCurve.IsNull()) {
-//            aGeom_BSplineCurve->Segment(first, last);
-//            if (!aGeom_BSplineCurve.IsNull() && aGeom_BSplineCurve->IsKind(STANDARD_TYPE(Geom_BSplineCurve)))
-//            {
-//                CurveFair cf(aGeom_BSplineCurve, paraNum);
-//                cfArray.push_back(cf);
-//            }
-//        }
-//    }
-//
-//    return cfArray;
-//}
+std::string format_as(gp_Vec Vec)
+{
+    std::stringstream ss;
+    ss << "(" << Vec.X() << ", " << Vec.Y() << ", " << Vec.Z() << ")" << " æ¨¡é•¿ : " << Vec.Magnitude();
+    return ss.str();
+}
 
-
+std::string to_string(Standard_Real value, Standard_Integer precision)
+{
+    std::ostringstream oss;
+    oss << std::fixed << std::setprecision(precision) << value;
+    return oss.str();
+}
 /*
-* Ëã·¨: ¢Ù ¼ÆËã³öbsplineµÄ×Ü³¤¶È£»¢Ú ¼ÆËã¾ùÔÈ³¤¶Èstep =  bspline / knotNum  - 1£»¢Û »ñÈ¡¾ùÔÈ³¤¶È¶ÔÓ¦µÄparam£»
+* ç®—æ³•: â‘  è®¡ç®—å‡ºbsplineçš„æ€»é•¿åº¦ï¼›â‘¡ è®¡ç®—å‡åŒ€é•¿åº¦step =  bspline / knotNum  - 1ï¼›â‘¢ è·å–å‡åŒ€é•¿åº¦å¯¹åº”çš„paramï¼›
 */
 Standard_Real CurveFair::GetLengthByParam(Standard_Real sParam, Standard_Real eParam, Standard_Real tol)
 {
@@ -149,258 +109,89 @@ Standard_Real CurveFair::GetLengthByParam(Standard_Real sParam, Standard_Real eP
     return GCPnts_AbscissaPoint::Length(curveAdapter, sParam, eParam, tol);
 }
 
-/*
-* dervN: N½×µ¼£¨1£¬2£¬3£©
-* bsplie£ºÑùÌõÇúÏß
-* ·µ»Ø£ºN½×µ¼
-*/
-std::string format_as(gp_Vec Vec)
+Handle(Geom_BSplineCurve) CurveFair::ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol)
 {
-    std::stringstream ss;
-    ss << "(" << Vec.X() << ", " << Vec.Y() << ", " << Vec.Z() << ")" << " Ä£³¤ : " << Vec.Magnitude();
-    return ss.str();
-}
+    // bsplineå±æ€§
+    Standard_Real firstParam = theCurve->FirstParameter();
+    Standard_Real lastParam = theCurve->LastParameter();
 
+    auto bsplineKnots = theCurve->Knots();
+    const Standard_Integer LOWER = bsplineKnots.Lower();
+    const Standard_Integer UPPER = bsplineKnots.Upper();
 
+    // bspline: è®¡ç®—å¼§é•¿
+    GeomAdaptor_Curve curveAdapter(theCurve);
+    Standard_Real bsplineLen = 0;
+    Standard_Real avgLen = 0;
+    Standard_Real paramStep = 0;
+    try
+    {
+        bsplineLen = GCPnts_AbscissaPoint::Length(curveAdapter, firstParam, lastParam, tol);
+        avgLen = bsplineLen / (paraNum - 1.0);
+        paramStep = (lastParam - firstParam) / (paraNum - 1.0);
+    }
+    catch (const Standard_Failure& e)
+    {
+        std::cerr << "OpenCASCADE Exception: " << e.GetMessageString() << std::endl;
+        return nullptr;
+    }
+    catch (const std::exception& e)
+    {
+        std::cerr << "Standard Exception: " << e.what() << std::endl;
+        return nullptr;
+    }
+    catch (...)
+    {
+        std::cerr << "Unknown Exception occurred!" << std::endl;
+        return nullptr;
+    }
 
-Standard_Real CurveFair::GetCurveCurvature(const Handle(Geom_BSplineCurve) theCurve, const Standard_Real t)
-{
-    return 0;
-}
-Standard_Real CurveFair::GetCurvatureDerivativeSquare(const Standard_Real t, const Standard_Address curF)
-{
-    CurveFair* cf = (CurveFair*)curF;
-    Handle(Geom_BSplineCurve) inner = cf->GetInner();
-    Handle(Geom_BSplineCurve) outer = cf->GetOuter();
+    // å¼§é•¿å‚æ•°åŒ–: è®¡ç®—æ–°çš„èŠ‚ç‚¹å‘é‡
+    TColStd_Array1OfReal reparamKnots(LOWER, LOWER + paraNum - 1);
+    TColgp_Array1OfPnt reparamPoints(LOWER, LOWER + paraNum - 1);
+    reparamKnots.SetValue(LOWER, firstParam);
+    reparamPoints.SetValue(LOWER, gp_Pnt(firstParam, firstParam, firstParam));
 
+    Standard_Real curLen = 0.0;
+    Standard_Real curParam = firstParam;
+    for (Standard_Integer i = LOWER + 1; i < paraNum; i++)
+    {
+        curLen += avgLen;
 
-    // innerµÄµ¼Êı
-    gp_Pnt inPnt;
-    gp_Vec inDerv1, inDerv2, inDerv3;
-    inner->D3(t, inPnt, inDerv1, inDerv2, inDerv3);
-    Standard_Real inParam = inPnt.X();
-    Standard_Real inD1 = inDerv1.X();
-    Standard_Real inD2 = inDerv2.X();
-    Standard_Real inD3 = inDerv3.X();
+        curParam += paramStep;
 
-    // outerµÄµ¼Êı
-    gp_Pnt outPnt;
-    gp_Vec outDerv1, outDerv2, outDerv3;
-    outer->D3(inParam, outPnt, outDerv1, outDerv2, outDerv3);
+        GCPnts_AbscissaPoint gap(curveAdapter, curLen, firstParam);
+        Standard_Real tparam = gap.Parameter();
 
-    // DµÄµ¼Êı
-    gp_Pnt d0 = outPnt;
-    gp_Vec d1 = outDerv1 * inD1;
-    //std::cout << "µ¥Î»ÇĞÏòÁ¿:" << d1.Magnitude() << std::endl;
-    gp_Vec d2 = outDerv2 * inD1 * inD1 + outDerv1 * inD2;
-    gp_Vec d3 = outDerv3 * pow(inD1, 3) + outDerv2 * (3 * inD1 * inD2) + outDerv1 * inD3;
-    Standard_Real aCurvature = d2.Magnitude() / pow(d1.Magnitude(), 2);
-    Standard_Real  aCurvatureDerivative = d3.Magnitude() / pow(d1.Magnitude(), 3);
+        reparamKnots.SetValue(i, curParam);
+        reparamPoints.SetValue(i, gp_Pnt(tparam, tparam, tparam));
+    }
+    reparamKnots.SetValue(paraNum, lastParam);
+    reparamPoints.SetValue(paraNum, gp_Pnt(lastParam, lastParam, lastParam));
 
-    //std::cout << "»¡³¤²ÎÊı»¯ÇúÂÊ£¨ĞŞÕıºó£©:" << aCurvature << std::endl;
-    //std::cout << "»¡³¤²ÎÊı»¯ÇúÂÊ±ä»¯ÂÊ(ĞŞÕıºó)" << aCurvatureDerivative << std::endl;
-
-    //// ¼ÆËãÇúÂÊ¡¢ÇúÂÊ±ä»¯ÂÊ
-    //Standard_Real aCurvature = d1.Crossed(d2).Magnitude() / pow(d1.Magnitude(), 3);
-    //std::cout << "³£¹æ·½·¨ÇúÂÊ:" << aCurvature << std::endl;
-    //gp_Vec dCurvatureDt = (d1.Crossed(d3) * d1.Magnitude() - d1.Crossed(d2) * (3.0 * d1.Dot(d2) / d1.Magnitude())) / pow(d1.Magnitude(), 4);
-    //Standard_Real aCurvatureDerivative = dCurvatureDt.Magnitude() / d1.Magnitude();
-    //std::cout << "³£¹æ·½·¨ÇúÂÊ±ä»¯ÂÊ" << aCurvatureDerivative << std::endl;
-    return pow(aCurvatureDerivative, 2);
-}
-
-
-
-Standard_Real CurveFair::GetFByGaussIntegral(const Standard_Real tol)
-{
-    CPnts_MyGaussFunction gaussFunction;
-    //POP pout WNT
-    gaussFunction.Init(GetCurvatureDerivativeSquare, this);
-    //FG.Init(f3d,(Standard_Address)&C);
-  //Adaptor3d_Curve adaptor(this->GetOuter());
-  // Ê¹ÓÃÊÊÅäÆ÷°ü×° B-Spline ÇúÏß
-    Handle(GeomAdaptor_Curve) adaptor = new GeomAdaptor_Curve(this->GetOuter());
-
-    std::cout << format_as(this->GetOuter()) << std::endl;
-    std::cout << format_as(this->GetInner()) << std::endl;
-    math_GaussSingleIntegration TheLength(
-        gaussFunction,
-        this->GetOuter()->FirstParameter(),
-        this->GetOuter()->LastParameter(),
-        order(*adaptor),
-        tol
+    // ä¸ºæ¯ä¸€ä¸ªç‚¹ï¼Œæ·»åŠ å‚æ•°
+    fitPoints = reparamPoints;
+    /*fitParams = reparamKnots;*/
+    inner = GeomAPI_PointsToBSpline
+    (
+        reparamPoints,
+        reparamKnots,
+        theCurve->Degree(),
+        theCurve->Degree(),
+        GeomAbs_C0,
+        1e-7
     );
-    return Abs(TheLength.Value());
+    return inner;
 }
 
-
-
-struct BasisDerivativeIntegralContext
+Standard_Real CurveFair::f(const Standard_Real theParameter, const Standard_Integer k)
 {
-    Standard_Integer i;                   // »ùº¯ÊıË÷Òı
-    Standard_Integer j;                   // »ùº¯ÊıË÷Òı
-    Standard_Integer p;                   // »ùº¯Êı½×Êı
-    Standard_Integer k;                   // µ¼Êı½×Êı£¨¶ÔÈı½×µ¼ÊıÎª3£©
-    std::vector<Standard_Real> Knots;     // ½ÚµãÏòÁ¿
-
-    BasisDerivativeIntegralContext(
-        Standard_Integer index_i,
-        Standard_Integer index_j,
-        Standard_Integer degree,
-        Standard_Integer derivOrder,
-        const std::vector<Standard_Real>& knotVector)
-        : i(index_i), j(index_j), p(degree), k(derivOrder), Knots(knotVector) {}
-};
-
-
-Standard_Real CurveFair::ComputeDerivativeIntegral(
-    const std::vector<Standard_Real> Knots,
-    const Standard_Integer i,
-    const Standard_Integer j,
-    const Standard_Integer p,
-    const Standard_Integer k,
-    const Standard_Real tol)
-{
-    // ²ÎÊıÓĞĞ§ĞÔÑéÖ¤
-    if (i < 0 || i + p + 1 >= Knots.size() || j < 0 || j + p + 1 >= Knots.size() || k > p)
-    {
-        return 0.0;
-    }
-
-    // È·¶¨»ı·ÖÇø¼ä - »ùº¯ÊıµÄ¾«È··ÇÁãÇø¼ä
-    // Í¨³£Îªknots[i] -> kntos[i + p + 1]
-    // ¼ÆËã»ùº¯ÊıiºÍjµÄ·ÇÁãÇø¼äÖØµş
-    Standard_Real lower_i = Knots[i];
-    Standard_Real upper_i = Knots[i + p + 1];
-    Standard_Real lower_j = Knots[j];
-    Standard_Real upper_j = Knots[j + p + 1];
-
-    // È·¶¨ÓĞĞ§»ı·ÖÇø¼ä
-    Standard_Real lowerBound = std::max(lower_i, lower_j);
-    Standard_Real upperBound = std::min(upper_i, upper_j);
-
-    if (upperBound < lowerBound) return 0.0;
-
-    /*Standard_Real lowerBound = Knots[0];
-    Standard_Real upperBound = Knots[Knots.size() - 1];*/
-    // ¼ì²éÇø¼äÊÇ·ñÓĞĞ§
-    if (std::abs(upperBound - lowerBound) < 1e-10)
-    {
-        return 0.0;
-    }
-    Standard_Integer Step = 100;
-    Standard_Real StepParameter = (upperBound - lowerBound) / Step;
-    Standard_Real AbsResult = 0;
-
-    //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
-    //{
-    //    if (parameter > upperBound) parameter = upperBound;
-
-    //    Standard_Real f0 = f(parameter);
-    //    Standard_Real f1 = f(parameter, 1);
-    //    Standard_Real f2 = f(parameter, 2);
-    //    Standard_Real f3 = f(parameter, 3);
-
-    //    Standard_Real First = BasisFunctionDerivative(f0, i, p, 3, Knots) * pow(f1, 3)
-    //        + 3 * BasisFunctionDerivative(f0, i, p, 2, Knots) * f1 * f2
-    //        + BasisFunctionDerivative(f0, i, p, 1, Knots) * f3;
-
-    //    Standard_Real Second = BasisFunctionDerivative(f0, j, p, 3, Knots) * pow(f1, 3)
-    //        + 3 * BasisFunctionDerivative(f0, j, p, 2, Knots) * f1 * f2
-    //        + BasisFunctionDerivative(f0, j, p, 1, Knots) * f3;
-
-    //    //// Ê¹ÓÃÌİĞÎ·¨Ôò, ¶ËµãÈ¨ÖØÎª1/2£¬ÄÚµãÈ¨ÖØÎª1
-    //    //Standard_Real weight = 1.0;
-    //    //if (parameter ==  lowerBound || parameter == upperBound) weight = 0.5;
-
-    //    //AbsResult += First * Second * weight;
-    //    AbsResult += First * Second;
-    //}
-    //return AbsResult * StepParameter;
-
-    for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
-    {
-        Standard_Real First = BasisFunctionDerivative(parameter, i, p, 2, Knots);
-        Standard_Real Second = BasisFunctionDerivative(parameter, j, p, 2, Knots);
-
-        AbsResult += First * Second;
-    }
-    return AbsResult * StepParameter;
-
-    //// ´´½¨»ı·ÖÉÏÏÂÎÄ
-    //BasisDerivativeIntegralContext context(i, j, p, k, Knots);
-
-    //// ´´½¨¸ßË¹»ı·Öº¯Êı¶ÔÏó²¢ÉèÖÃ»Øµ÷
-    //CPnts_MyGaussFunction gaussFunction;
-    //gaussFunction.Init(DerivativeSquaredThirdCallback, &context);
-    //// Ö´ĞĞ¸ßË¹»ı·Ö
-    //math_GaussSingleIntegration integrator(
-    //    gaussFunction,
-    //    lowerBound,
-    //    upperBound,
-    //    30,
-    //    tol
-    //);
-    //return Abs(integrator.Value());
-}
-Standard_Real CurveFair::DerivativeSquaredTwoCallback(const Standard_Real u, const Standard_Address theAddress)
-{
-    // ´ÓµØÖ·»Ö¸´ÉÏÏÂÎÄ½á¹¹Ìå
-    BasisDerivativeIntegralContext* context =
-        static_cast<BasisDerivativeIntegralContext*>(theAddress);
-
-    Standard_Real fu = f(u);
-    Standard_Real fu_1 = f(u, 1);
-    Standard_Real fu_2 = f(u, 2);
-    Standard_Integer i = context->i;
-    Standard_Integer p = context->p;
-    Standard_Integer DerivateK = context->k;
-    std::vector<Standard_Real> Knots = context->Knots;
-
-
-    Standard_Real Nj3_2 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-    Standard_Real Nj3_1 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-
-    Standard_Real first_1 = Nj3_2 * fu_1 * fu_1;
-    Standard_Real first_2 = Nj3_1 * fu_2;
-    Standard_Real Mi = first_1 + first_2;
-
-    // ·µ»Øµ¼Êı
-    return Mi;
+    if (k == 0) return inner->Value(theParameter).X();
+    gp_Vec DerivateVector = inner->DN(theParameter, k);
+    return DerivateVector.X();
 }
 
-Standard_Real CurveFair::DerivativeSquaredThirdCallback(const Standard_Real u, const Standard_Address theAddress)
-{
-    // ´ÓµØÖ·»Ö¸´ÉÏÏÂÎÄ½á¹¹Ìå
-    BasisDerivativeIntegralContext* context =
-        static_cast<BasisDerivativeIntegralContext*>(theAddress);
-
-    Standard_Integer i = context->i;
-    Standard_Integer j = context->j;
-
-    Standard_Integer p = context->p;
-    Standard_Integer DerivateK = context->k;
-
-    std::vector<Standard_Real> Knots = context->Knots;
-
-    Standard_Real fu = f(u);
-    Standard_Real fu_1 = f(u, 1);
-    Standard_Real fu_2 = f(u, 2);
-    Standard_Real fu_3 = f(u, 3);
-    Standard_Real Ni3_3 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-    Standard_Real Ni3_2 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-    Standard_Real Ni3_1 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
-
-    Standard_Real Nj3_3 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
-    Standard_Real Nj3_2 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
-    Standard_Real Nj3_1 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
-    Standard_Real Mi = Ni3_3 * pow(fu_1, 3) + 3 * Ni3_2 * fu_1 * fu_2 + Ni3_1 * fu_3;
-    Standard_Real Mj = Nj3_3 * pow(fu_1, 3) + 3 * Nj3_2 * fu_1 * fu_2 + Nj3_1 * fu_3;
-    // ·µ»Øµ¼Êı
-    return Mi * Mj;
-}
-
-// To compute the value of a b-spline basic function value 
+// To compute the value of a b-spline basic function value ï¼ˆå·²ç»éªŒè¯ä¸ºæ­£ç¡®ï¼‰
 // write by: xin.c
 Standard_Real CurveFair::OneBasicFun(const Standard_Real u, const Standard_Integer i, const Standard_Integer p, const std::vector<Standard_Real>& Knots)
 {
@@ -459,42 +250,35 @@ Standard_Real CurveFair::OneBasicFun(const Standard_Real u, const Standard_Integ
     Nip = N[0];
     return Nip;
 }
+
 /**
- * ¼ÆËãBÑùÌõ»ùº¯ÊıµÄk½×µ¼Êı
- * »ùÓÚµİ¹é¹«Ê½: N^{(k)}_{i,p} = p * ((N^{(k-1)}_{i,p-1} / (u_{i+p} - u_i)) - (N^{(k-1)}_{i+1,p-1} / (u_{i+p+1} - u_{i+1})))
- * ¿ÉÒÔ²Î¿¼ Nurbs Book ¹«Ê½(2-9)
+ * è®¡ç®—Bæ ·æ¡åŸºå‡½æ•°çš„ké˜¶å¯¼æ•°ï¼ˆå·²ç»éªŒè¯ä¸ºæ­£ç¡®ï¼‰
+ * åŸºäºé€’å½’å…¬å¼: N^{(k)}_{i,p} = p * ((N^{(k-1)}_{i,p-1} / (u_{i+p} - u_i)) - (N^{(k-1)}_{i+1,p-1} / (u_{i+p+1} - u_{i+1})))
+ * å¯ä»¥å‚è€ƒ Nurbs Book å…¬å¼(2-9)
  *
- * @param u ²ÎÊıÖµ
- * @param i »ùº¯ÊıË÷Òı
- * @param p »ùº¯Êı½×Êı
- * @param k Çóµ¼½×Êı
- * @param Knots ½ÚµãÏòÁ¿
- * @return k½×µ¼ÊıÖµ
+ * @param u å‚æ•°å€¼
+ * @param i åŸºå‡½æ•°ç´¢å¼•
+ * @param p åŸºå‡½æ•°é˜¶æ•°
+ * @param k æ±‚å¯¼é˜¶æ•°
+ * @param Knots èŠ‚ç‚¹å‘é‡
+ * @return ké˜¶å¯¼æ•°å€¼
  */
-
-Standard_Real CurveFair::f(const Standard_Real theParameter, const Standard_Integer k)
-{
-    if (k == 0) return inner->Value(theParameter).X();
-    gp_Vec DerivateVector = inner->DN(theParameter, k);
-    return DerivateVector.X();
-}
-
 Standard_Real CurveFair::BasisFunctionDerivative(const Standard_Real u, const Standard_Integer i, const Standard_Integer p,
     const Standard_Integer k, const std::vector<Standard_Real>& Knots)
 {
-    // 0½×µ¼£¬Ö±½Ó·µ»Ø»ùº¯ÊıÖµ
+    // 0é˜¶å¯¼ï¼Œç›´æ¥è¿”å›åŸºå‡½æ•°å€¼
     if (k == 0)
     {
         return OneBasicFun(u, i, p, Knots);
     }
 
-    // µ±k > pÊ±£¬µ¼ÊıÎª0, µ±p = 0Ê±£¬µ¼ÊıÎª0
+    // å½“k > pæ—¶ï¼Œå¯¼æ•°ä¸º0, å½“p = 0æ—¶ï¼Œå¯¼æ•°ä¸º0
     if (k > p || p == 0)
     {
         return 0.0;
     }
 
-    // ¼ÆËãµÚÒ»Ïî: (p / (u_{i+p} - u_i)) * N^{(k-1)}_{i,p-1}
+    // è®¡ç®—ç¬¬ä¸€é¡¹: (p / (u_{i+p} - u_i)) * N^{(k-1)}_{i,p-1}
     Standard_Real Term1 = 0.0;
     Standard_Real Denominator1 = Knots[i + p] - Knots[i];
     if (std::abs(Denominator1) > std::numeric_limits<Standard_Real>::epsilon())
@@ -502,7 +286,7 @@ Standard_Real CurveFair::BasisFunctionDerivative(const Standard_Real u, const St
         Term1 = (p / Denominator1) * BasisFunctionDerivative(u, i, p - 1, k - 1, Knots);
     }
 
-    // ¼ÆËãµÚ¶şÏî: (p / (u_{i+p+1} - u_{i+1})) * N^{(k-1)}_{i+1,p-1}
+    // è®¡ç®—ç¬¬äºŒé¡¹: (p / (u_{i+p+1} - u_{i+1})) * N^{(k-1)}_{i+1,p-1}
     Standard_Real Term2 = 0.0;
     Standard_Real Denominator2 = Knots[i + p + 1] - Knots[i + 1];
     if (std::abs(Denominator2) > std::numeric_limits<Standard_Real>::epsilon())
@@ -510,36 +294,446 @@ Standard_Real CurveFair::BasisFunctionDerivative(const Standard_Real u, const St
         Term2 = (p / Denominator2) * BasisFunctionDerivative(u, i + 1, p - 1, k - 1, Knots);
     }
 
-    // ¸ù¾İ¹«Ê½¼ÆËãk½×µ¼Êı
+    // æ ¹æ®å…¬å¼è®¡ç®—ké˜¶å¯¼æ•°
     return Term1 - Term2;
 }
 
-Eigen::Matrix3d CurveFair::GetNewControlPoints(const Eigen::MatrixXd& M, const Eigen::MatrixXd& V, const Eigen::Matrix3d& D0, const Standard_Real alpha)
+//Standard_Real CurveFair::GetCurvatureDerivativeSquare(const Standard_Real t, const Standard_Address curF)
+//{
+//    CurveFair* cf = (CurveFair*)curF;
+//    Handle(Geom_BSplineCurve) inner = cf->GetInner();
+//    Handle(Geom_BSplineCurve) outer = cf->GetOuter();
+//
+//    // innerçš„å¯¼æ•°
+//    gp_Pnt inPnt;
+//    gp_Vec inDerv1, inDerv2, inDerv3;
+//    inner->D3(t, inPnt, inDerv1, inDerv2, inDerv3);
+//    Standard_Real inParam = inPnt.X();
+//    Standard_Real inD1 = inDerv1.X();
+//    Standard_Real inD2 = inDerv2.X();
+//    Standard_Real inD3 = inDerv3.X();
+//
+//    // outerçš„å¯¼æ•°
+//    gp_Pnt outPnt;
+//    gp_Vec outDerv1, outDerv2, outDerv3;
+//    outer->D3(inParam, outPnt, outDerv1, outDerv2, outDerv3);
+//
+//    // Dçš„å¯¼æ•°
+//    gp_Pnt d0 = outPnt;
+//    gp_Vec d1 = outDerv1 * inD1;
+//    //std::cout << "å•ä½åˆ‡å‘é‡:" << d1.Magnitude() << std::endl;
+//    gp_Vec d2 = outDerv2 * inD1 * inD1 + outDerv1 * inD2;
+//    gp_Vec d3 = outDerv3 * pow(inD1, 3) + outDerv2 * (3 * inD1 * inD2) + outDerv1 * inD3;
+//    Standard_Real aCurvature = d2.Magnitude() / pow(d1.Magnitude(), 2);
+//    Standard_Real  aCurvatureDerivative = d3.Magnitude() / pow(d1.Magnitude(), 3);
+//
+//    //std::cout << "å¼§é•¿å‚æ•°åŒ–æ›²ç‡ï¼ˆä¿®æ­£åï¼‰:" << aCurvature << std::endl;
+//    //std::cout << "å¼§é•¿å‚æ•°åŒ–æ›²ç‡å˜åŒ–ç‡(ä¿®æ­£å)" << aCurvatureDerivative << std::endl;
+//
+//    //// è®¡ç®—æ›²ç‡ã€æ›²ç‡å˜åŒ–ç‡
+//    //Standard_Real aCurvature = d1.Crossed(d2).Magnitude() / pow(d1.Magnitude(), 3);
+//    //std::cout << "å¸¸è§„æ–¹æ³•æ›²ç‡:" << aCurvature << std::endl;
+//    //gp_Vec dCurvatureDt = (d1.Crossed(d3) * d1.Magnitude() - d1.Crossed(d2) * (3.0 * d1.Dot(d2) / d1.Magnitude())) / pow(d1.Magnitude(), 4);
+//    //Standard_Real aCurvatureDerivative = dCurvatureDt.Magnitude() / d1.Magnitude();
+//    //std::cout << "å¸¸è§„æ–¹æ³•æ›²ç‡å˜åŒ–ç‡" << aCurvatureDerivative << std::endl;
+//    return pow(aCurvatureDerivative, 2);
+//}
+//
+//Standard_Real CurveFair::GetFByGaussIntegral(const Standard_Real tol)
+//{
+//    CPnts_MyGaussFunction gaussFunction;
+//    // POP pout WNT
+//    gaussFunction.Init(GetCurvatureDerivativeSquare, this);
+//    // FG.Init(f3d,(Standard_Address)&C);
+//    // Adaptor3d_Curve adaptor(this->GetOuter());
+//    // ä½¿ç”¨é€‚é…å™¨åŒ…è£… B-Spline æ›²çº¿
+//    Handle(GeomAdaptor_Curve) adaptor = new GeomAdaptor_Curve(this->GetOuter());
+//
+//    std::cout << format_as(this->GetOuter()) << std::endl;
+//    std::cout << format_as(this->GetInner()) << std::endl;
+//    math_GaussSingleIntegration TheLength(
+//        gaussFunction,
+//        this->GetOuter()->FirstParameter(),
+//        this->GetOuter()->LastParameter(),
+//        order(*adaptor),
+//        tol
+//    );
+//
+//    return Abs(TheLength.Value());
+//}
+
+
+//struct BasisDerivativeIntegralContext
+//{
+//    Standard_Integer i;                   // åŸºå‡½æ•°ç´¢å¼•
+//    Standard_Integer j;                   // åŸºå‡½æ•°ç´¢å¼•
+//    Standard_Integer p;                   // åŸºå‡½æ•°é˜¶æ•°
+//    Standard_Integer k;                   // å¯¼æ•°é˜¶æ•°ï¼ˆå¯¹ä¸‰é˜¶å¯¼æ•°ä¸º3ï¼‰
+//    std::vector<Standard_Real> Knots;     // èŠ‚ç‚¹å‘é‡
+//
+//    BasisDerivativeIntegralContext
+//    (
+//        Standard_Integer index_i,
+//        Standard_Integer index_j,
+//        Standard_Integer degree,
+//        Standard_Integer derivOrder,
+//        const std::vector<Standard_Real>& knotVector
+//    )
+//    : i(index_i), j(index_j), p(degree), k(derivOrder), Knots(knotVector) {}
+//};
+//Standard_Real CurveFair::DerivativeSquaredTwoCallback(const Standard_Real u, const Standard_Address theAddress)
+//{
+//    // ä»åœ°å€æ¢å¤ä¸Šä¸‹æ–‡ç»“æ„ä½“
+//    BasisDerivativeIntegralContext* context =
+//        static_cast<BasisDerivativeIntegralContext*>(theAddress);
+//
+//    Standard_Real fu = f(u);
+//    Standard_Real fu_1 = f(u, 1);
+//    Standard_Real fu_2 = f(u, 2);
+//    Standard_Integer i = context->i;
+//    Standard_Integer p = context->p;
+//    Standard_Integer DerivateK = context->k;
+//    std::vector<Standard_Real> Knots = context->Knots;
+//
+//
+//    Standard_Real Nj3_2 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+//    Standard_Real Nj3_1 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+//
+//    Standard_Real first_1 = Nj3_2 * fu_1 * fu_1;
+//    Standard_Real first_2 = Nj3_1 * fu_2;
+//    Standard_Real Mi = first_1 + first_2;
+//
+//    // è¿”å›å¯¼æ•°
+//    return Mi;
+//}
+//
+//Standard_Real CurveFair::DerivativeSquaredThirdCallback(const Standard_Real u, const Standard_Address theAddress)
+//{
+//    // ä»åœ°å€æ¢å¤ä¸Šä¸‹æ–‡ç»“æ„ä½“
+//    BasisDerivativeIntegralContext* context =
+//        static_cast<BasisDerivativeIntegralContext*>(theAddress);
+//
+//    Standard_Integer i = context->i;
+//    Standard_Integer j = context->j;
+//
+//    Standard_Integer p = context->p;
+//    Standard_Integer DerivateK = context->k;
+//
+//    std::vector<Standard_Real> Knots = context->Knots;
+//
+//    Standard_Real fu = f(u);
+//    Standard_Real fu_1 = f(u, 1);
+//    Standard_Real fu_2 = f(u, 2);
+//    Standard_Real fu_3 = f(u, 3);
+//    Standard_Real Ni3_3 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+//    Standard_Real Ni3_2 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+//    Standard_Real Ni3_1 = BasisFunctionDerivative(fu, i, p, DerivateK, Knots);
+//
+//    Standard_Real Nj3_3 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
+//    Standard_Real Nj3_2 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
+//    Standard_Real Nj3_1 = BasisFunctionDerivative(fu, j, p, DerivateK, Knots);
+//    Standard_Real Mi = Ni3_3 * pow(fu_1, 3) + 3 * Ni3_2 * fu_1 * fu_2 + Ni3_1 * fu_3;
+//    Standard_Real Mj = Nj3_3 * pow(fu_1, 3) + 3 * Nj3_2 * fu_1 * fu_2 + Nj3_1 * fu_3;
+//    // è¿”å›å¯¼æ•°
+//    return Mi * Mj;
+//}
+Standard_Real CurveFair::ComputeDerivativeIntegral
+(
+    const std::vector<Standard_Real> Knots,
+    const Standard_Integer i,
+    const Standard_Integer j,
+    const Standard_Integer p,
+    const Standard_Integer k,
+    const Standard_Real tol
+)
 {
-    return (alpha * M + V).inverse() * V * D0;
+    // å‚æ•°æœ‰æ•ˆæ€§éªŒè¯
+    if (i < 0 || i + p + 1 >= Knots.size() || j < 0 || j + p + 1 >= Knots.size() || k > p)
+    {
+        return 0.0;
+    }
+
+    // ç¡®å®šç§¯åˆ†åŒºé—´ - åŸºå‡½æ•°çš„ç²¾ç¡®éé›¶åŒºé—´
+    // é€šå¸¸ä¸ºknots[i] -> kntos[i + p + 1]
+    // è®¡ç®—åŸºå‡½æ•°iå’Œjçš„éé›¶åŒºé—´é‡å 
+    Standard_Real lower_i = Knots[i];
+    Standard_Real lower_j = Knots[j];
+    Standard_Real upper_i = Knots[i + p + 1];
+    Standard_Real upper_j = Knots[j + p + 1];
+
+    // ç¡®å®šæœ‰æ•ˆç§¯åˆ†åŒºé—´
+    Standard_Real lowerBound = std::max(lower_i, lower_j);
+    Standard_Real upperBound = std::min(upper_i, upper_j);
+
+    //lowerBound = Knots[0];
+    //upperBound = Knots[Knots.size() - 1];
+    if (upperBound < lowerBound) return 0.0;
+
+    Standard_Real test1 = BasisFunctionDerivative(lowerBound - 0.1, i, p, k, Knots);
+    Standard_Real test2 = BasisFunctionDerivative(upperBound + 0.1, i, p, k, Knots);
+    Standard_Real test3 = BasisFunctionDerivative(lowerBound - 0.1, j, p, k, Knots);
+    Standard_Real test4 = BasisFunctionDerivative(upperBound + 0.1, j, p, k, Knots);
+    if ((std::abs(test1) > 1e-10 && std::abs(test3) > 1e-10) ||
+          (std::abs(test2) > 1e-10 && std::abs(test4) > 1e-10))
+    {
+        std::cout << "Error::Integral inteval error!!!" << std::endl;
+        std::cout << "test1:" << test1 << std::endl;
+        std::cout << "test2:" << test2 << std::endl;
+        std::cout << "test3:" << test3 << std::endl;
+        std::cout << "test4:" << test4 << std::endl;
+    }
+
+
+    // æ£€æŸ¥åŒºé—´æ˜¯å¦æœ‰æ•ˆ
+    Standard_Real Length = upperBound - lowerBound;
+    if (std::abs(upperBound - lowerBound) < 1e-20)
+    {
+        return 0.0;
+    }
+    Standard_Integer Step = 100;
+    Standard_Real StepParameter = (upperBound - lowerBound) / Step;
+    Standard_Real AbsResult = 0;
+
+    //-------------------------------------------------------------------------------
+    //                            å¼§é•¿å‚æ•°åŒ–ä¸‰é˜¶å¯¼æ•°
+    //-------------------------------------------------------------------------------
+
+    for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+    {
+        if (parameter > upperBound) parameter = upperBound;
+
+        Standard_Real f0 = f(parameter);
+        Standard_Real f1 = f(parameter, 1);
+        Standard_Real f2 = f(parameter, 2);
+        Standard_Real f3 = f(parameter, 3);
+
+        // Ni
+        Standard_Real First = BasisFunctionDerivative(f0, i, p, 3, Knots) * pow(f1, 3)
+            + 3 * BasisFunctionDerivative(f0, i, p, 2, Knots) * f1 * f2
+            + BasisFunctionDerivative(f0, i, p, 1, Knots) * f3;
+
+        // Nj
+        Standard_Real Second = BasisFunctionDerivative(f0, j, p, 3, Knots) * pow(f1, 3)
+            + 3 * BasisFunctionDerivative(f0, j, p, 2, Knots) * f1 * f2
+            + BasisFunctionDerivative(f0, j, p, 1, Knots) * f3;
+     
+        AbsResult += First * Second;
+    }
+    return AbsResult * StepParameter;
+
+   ///* -------------------------------------------------------------------------------
+   //                             å¼§é•¿å‚æ•°åŒ–äºŒé˜¶å¯¼æ•°
+   // -------------------------------------------------------------------------------*/
+
+   // for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+   // {
+   //     if (parameter > upperBound) parameter = upperBound;
+
+   //     Standard_Real f0 = f(parameter);
+   //     Standard_Real f1 = f(parameter, 1);
+   //     Standard_Real f2 = f(parameter, 2);
+   //     Standard_Real f3 = f(parameter, 3);
+
+   //     Standard_Real First = BasisFunctionDerivative(f0, i, p, 2, Knots) * pow(f1, 2)
+   //         + BasisFunctionDerivative(f0, i, p, 1, Knots) * f2;
+
+   //     Standard_Real Second = BasisFunctionDerivative(f0, j, p, 2, Knots) * pow(f1, 2)
+   //         + BasisFunctionDerivative(f0, j, p, 1, Knots) * f2;
+
+   //     AbsResult += First * Second;
+   // }
+   // return AbsResult * StepParameter;
+
+    
+    //-------------------------------------------------------------------------------
+    //                             äºŒé˜¶å¯¼æ•°
+    //-------------------------------------------------------------------------------
+
+    //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+    //{
+    //    if (parameter > upperBound) parameter = upperBound;
+    //    Standard_Real First = BasisFunctionDerivative(parameter, i, p, 2, Knots);
+    //    Standard_Real Second = BasisFunctionDerivative(parameter, j, p, 2, Knots);
+
+    //    AbsResult += First * Second;
+    //}
+    //return AbsResult * StepParameter;
+
+    //-------------------------------------------------------------------------------
+    //                             ä¸‰é˜¶å¯¼æ•°
+    //-------------------------------------------------------------------------------
+
+    //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+    //{
+    //    if (parameter > upperBound) parameter = upperBound;
+    //    Standard_Real First = BasisFunctionDerivative(parameter, i, p, 3, Knots);
+    //    Standard_Real Second = BasisFunctionDerivative(parameter, j, p, 3, Knots);
+
+    //    AbsResult += First * Second;
+    //}
+    //return AbsResult * StepParameter;
+
+    //// åˆ›å»ºç§¯åˆ†ä¸Šä¸‹æ–‡
+    //BasisDerivativeIntegralContext context(i, j, p, k, Knots);
+
+    //// åˆ›å»ºé«˜æ–¯ç§¯åˆ†å‡½æ•°å¯¹è±¡å¹¶è®¾ç½®å›è°ƒ
+    //CPnts_MyGaussFunction gaussFunction;
+    //gaussFunction.Init(DerivativeSquaredThirdCallback, &context);
+    //// æ‰§è¡Œé«˜æ–¯ç§¯åˆ†
+    //math_GaussSingleIntegration integrator(
+    //    gaussFunction,
+    //    lowerBound,
+    //    upperBound,
+    //    30,
+    //    tol
+    //);
+    //return Abs(integrator.Value());
 }
 
-Handle(Geom_BSplineCurve) CurveFair::CreateNewBSplineCurve(const Handle(Geom_BSplineCurve)& originalCurve, const Eigen::MatrixXd& D)
+Standard_Real CurveFair::ComputeDerivativeIntegral
+(
+    const std::vector<Standard_Real> Knots,
+    const Standard_Integer i,
+    const Standard_Integer p,
+    const Standard_Integer k,
+    const Standard_Real tol
+)
 {
+    // å‚æ•°æœ‰æ•ˆæ€§éªŒè¯
+    if (i < 0 || i + p + 1 >= Knots.size() || k > p)
+    {
+        return 0.0;
+    }
 
-    // »ñÈ¡Ô­Ê¼ÇúÏßµÄ Degree
+    // ç¡®å®šç§¯åˆ†åŒºé—´ - åŸºå‡½æ•°çš„ç²¾ç¡®éé›¶åŒºé—´
+    // é€šå¸¸ä¸ºknots[i] -> kntos[i + p + 1]
+    // è®¡ç®—åŸºå‡½æ•°iå’Œjçš„éé›¶åŒºé—´é‡å 
+    Standard_Real lowerBound = Knots[i];
+    Standard_Real upperBound = Knots[i + p + 1];
+
+    // æ£€æŸ¥åŒºé—´æ˜¯å¦æœ‰æ•ˆ
+    Standard_Real Length = upperBound - lowerBound;
+    if (std::abs(upperBound - lowerBound) < 1e-20)
+    {
+        return 0.0;
+    }
+    Standard_Integer Step = 100;
+    Standard_Real StepParameter = (upperBound - lowerBound) / Step;
+    Standard_Real AbsResult = 0;
+
+    //-------------------------------------------------------------------------------
+    //                            å¼§é•¿å‚æ•°åŒ–ä¸‰é˜¶å¯¼æ•°
+    //-------------------------------------------------------------------------------
+
+    for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+    {
+        if (parameter > upperBound) parameter = upperBound;
+
+        Standard_Real f0 = f(parameter);
+        Standard_Real f1 = f(parameter, 1);
+        Standard_Real f2 = f(parameter, 2);
+        Standard_Real f3 = f(parameter, 3);
+
+        // Ni
+        Standard_Real First = BasisFunctionDerivative(f0, i, p, 3, Knots) * pow(f1, 3)
+            + 3 * BasisFunctionDerivative(f0, i, p, 2, Knots) * f1 * f2
+            + BasisFunctionDerivative(f0, i, p, 1, Knots) * f3;
+
+        AbsResult += First;
+    }
+    return AbsResult * StepParameter;
+
+    ///* -------------------------------------------------------------------------------
+    //                             å¼§é•¿å‚æ•°åŒ–äºŒé˜¶å¯¼æ•°
+    // -------------------------------------------------------------------------------*/
+
+    // for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+    // {
+    //     if (parameter > upperBound) parameter = upperBound;
+
+    //     Standard_Real f0 = f(parameter);
+    //     Standard_Real f1 = f(parameter, 1);
+    //     Standard_Real f2 = f(parameter, 2);
+    //     Standard_Real f3 = f(parameter, 3);
+
+    //     Standard_Real First = BasisFunctionDerivative(f0, i, p, 2, Knots) * pow(f1, 2)
+    //         + BasisFunctionDerivative(f0, i, p, 1, Knots) * f2;
+
+    //     Standard_Real Second = BasisFunctionDerivative(f0, j, p, 2, Knots) * pow(f1, 2)
+    //         + BasisFunctionDerivative(f0, j, p, 1, Knots) * f2;
+
+    //     AbsResult += First * Second;
+    // }
+    // return AbsResult * StepParameter;
+
+
+     //-------------------------------------------------------------------------------
+     //                             äºŒé˜¶å¯¼æ•°
+     //-------------------------------------------------------------------------------
+
+     //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+     //{
+     //    if (parameter > upperBound) parameter = upperBound;
+     //    Standard_Real First = BasisFunctionDerivative(parameter, i, p, 2, Knots);
+     //    Standard_Real Second = BasisFunctionDerivative(parameter, j, p, 2, Knots);
+
+     //    AbsResult += First * Second;
+     //}
+     //return AbsResult * StepParameter;
+
+     //-------------------------------------------------------------------------------
+     //                             ä¸‰é˜¶å¯¼æ•°
+     //-------------------------------------------------------------------------------
+
+     //for (Standard_Real parameter = lowerBound; parameter <= upperBound; parameter += StepParameter)
+     //{
+     //    if (parameter > upperBound) parameter = upperBound;
+     //    Standard_Real First = BasisFunctionDerivative(parameter, i, p, 3, Knots);
+     //    Standard_Real Second = BasisFunctionDerivative(parameter, j, p, 3, Knots);
+
+     //    AbsResult += First * Second;
+     //}
+     //return AbsResult * StepParameter;
+
+     //// åˆ›å»ºç§¯åˆ†ä¸Šä¸‹æ–‡
+     //BasisDerivativeIntegralContext context(i, j, p, k, Knots);
+
+     //// åˆ›å»ºé«˜æ–¯ç§¯åˆ†å‡½æ•°å¯¹è±¡å¹¶è®¾ç½®å›è°ƒ
+     //CPnts_MyGaussFunction gaussFunction;
+     //gaussFunction.Init(DerivativeSquaredThirdCallback, &context);
+     //// æ‰§è¡Œé«˜æ–¯ç§¯åˆ†
+     //math_GaussSingleIntegration integrator(
+     //    gaussFunction,
+     //    lowerBound,
+     //    upperBound,
+     //    30,
+     //    tol
+     //);
+     //return Abs(integrator.Value());
+}
+
+Handle(Geom_BSplineCurve) CurveFair::CreateNewBSplineCurve(const Handle(Geom_BSplineCurve)& originalCurve, const Eigen::MatrixXd& newD)
+{
+    // è·å–åŸå§‹æ›²çº¿çš„ Degree
     Standard_Integer degree = originalCurve->Degree();
-    // »ñÈ¡Ô­Ê¼ÇúÏßµÄ ½ÚµãÏòÁ¿ºÍ´ÎÊı
+    // è·å–åŸå§‹æ›²çº¿çš„ èŠ‚ç‚¹å‘é‡å’Œæ¬¡æ•°
     TColStd_Array1OfReal knots(1, originalCurve->NbKnots());
     originalCurve->Knots(knots);
 
     TColStd_Array1OfInteger multiplicities(1, originalCurve->NbKnots());
     originalCurve->Multiplicities(multiplicities);
 
-    // ½« Eigen::Matrix3d ×ª»»Îª OCC ¿ØÖÆµãÊı×é
-    TColgp_Array1OfPnt Poles(1, D.rows()); // OCC ¿ØÖÆµãÊı×é
-    for (Standard_Integer i = 0; i < D.rows(); i++)
+    // å°† Eigen::Matrix3d è½¬æ¢ä¸º OCC æ§åˆ¶ç‚¹æ•°ç»„
+    TColgp_Array1OfPnt Poles(1, newD.rows()); // OCC æ§åˆ¶ç‚¹æ•°ç»„
+    for (Standard_Integer i = 0; i < newD.rows(); i++)
     {
-        Poles.SetValue(i + 1, gp_Pnt(D(i, 0), D(i, 1), D(i, 2)));
+        Poles.SetValue(i + 1, gp_Pnt(newD(i, 0), newD(i, 1), newD(i, 2)));
     }
-    // ´´½¨ĞÂµÄ B ÑùÌõÇúÏß
+    // åˆ›å»ºæ–°çš„ B æ ·æ¡æ›²çº¿
     Handle(Geom_BSplineCurve) newCurve = new Geom_BSplineCurve(
         Poles, knots, multiplicities, degree);
+
+    UniformCurve(newCurve);
 
     return newCurve;
 }
@@ -558,6 +752,7 @@ Standard_Real CurveFair::GetControlPointsOffset(const TColgp_Array1OfPnt theOrig
     }
     return Offset;
 }
+
 Standard_Real CurveFair::GetCurveCurveHausdorffDistance(const Handle(Geom_BSplineCurve) theOriginalCurve, const Handle(Geom_BSplineCurve) theOperateCurve)
 {
     Standard_Real FirstParameter = theOriginalCurve->FirstParameter();
@@ -570,7 +765,7 @@ Standard_Real CurveFair::GetCurveCurveHausdorffDistance(const Handle(Geom_BSplin
         gp_Pnt originPoint = theOriginalCurve->Value(t);
         GeomAPI_ProjectPointOnCurve projector(originPoint, theOperateCurve);
 
-        // ¼ì²éÊÇ·ñÕÒµ½Í¶Ó°µã
+        // æ£€æŸ¥æ˜¯å¦æ‰¾åˆ°æŠ•å½±ç‚¹
         if (!projector.NbPoints())
         {
             std::cerr << "No projection found for the point on the curve." << std::endl;
@@ -586,397 +781,296 @@ Standard_Real CurveFair::GetCurveCurveHausdorffDistance(const Handle(Geom_BSplin
     }
     return HausdorffDistance;
 }
-Handle(Geom_BSplineCurve) CurveFair::ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol)
+
+Standard_Real CurveFair::f_inverse(const Handle(Geom_BSplineCurve)& theBSplineCurve, Standard_Real t)
 {
-    // bsplineÊôĞÔ
-    Standard_Real firstParam = theCurve->FirstParameter();
-    Standard_Real lastParam = theCurve->LastParameter();
-
-    auto bsplineKnots = theCurve->Knots();
-    const Standard_Integer LOWER = bsplineKnots.Lower();
-    const Standard_Integer UPPER = bsplineKnots.Upper();
-
-    // bspline: ¼ÆËã»¡³¤
-    GeomAdaptor_Curve curveAdapter(theCurve);
-    Standard_Real bsplineLen = 0;
-    Standard_Real avgLen = 0;
-    Standard_Real paramStep = 0;
-    try
+    Standard_Real Left = theBSplineCurve->FirstParameter();
+    Standard_Real Right = theBSplineCurve->LastParameter();
+    if (t == Left) return Left;
+    if (t == Right) return Right;
+    while (true)
     {
-        bsplineLen = GCPnts_AbscissaPoint::Length(curveAdapter, firstParam, lastParam, tol);
-        avgLen = bsplineLen / (paraNum - 1.0);
-        paramStep = (lastParam - firstParam) / (paraNum - 1.0);
+        Standard_Real mid = Left + (Right - Left) / 2;
+        Standard_Real t_mid = f(mid);
+        if (std::abs(t_mid - t) < 1e-10) return mid;
+        if (t_mid > t)
+        {
+            Right = mid;
+        }
+        else if (t_mid < t)
+        {
+            Left = mid;
+        }
     }
-    catch (const Standard_Failure& e)
-    {
-        std::cerr << "OpenCASCADE Exception: " << e.GetMessageString() << std::endl;
-        return nullptr;
-    }
-    catch (const std::exception& e)
-    {
-        std::cerr << "Standard Exception: " << e.what() << std::endl;
-        return nullptr;
-    }
-    catch (...)
-    {
-        std::cerr << "Unknown Exception occurred!" << std::endl;
-        return nullptr;
-    }
-
-
-    // »¡³¤²ÎÊı»¯: ¼ÆËãĞÂµÄ½ÚµãÏòÁ¿
-    TColStd_Array1OfReal reparamKnots(LOWER, LOWER + paraNum - 1);
-    TColgp_Array1OfPnt reparamPoints(LOWER, LOWER + paraNum - 1);
-    reparamKnots.SetValue(LOWER, firstParam);
-    reparamPoints.SetValue(LOWER, gp_Pnt(firstParam, firstParam, firstParam));
-
-    Standard_Real curLen = 0.0;
-    Standard_Real curParam = firstParam;
-    for (Standard_Integer i = LOWER + 1; i < paraNum; i++)
-    {
-        curLen += avgLen;
-
-        curParam += paramStep;
-
-        GCPnts_AbscissaPoint gap(curveAdapter, curLen, firstParam);
-        Standard_Real tparam = gap.Parameter();
-
-        reparamKnots.SetValue(i, curParam);
-        reparamPoints.SetValue(i, gp_Pnt(tparam, tparam, tparam));
-    }
-    reparamKnots.SetValue(paraNum, lastParam);
-    reparamPoints.SetValue(paraNum, gp_Pnt(lastParam, lastParam, lastParam));
-
-    // ÎªÃ¿Ò»¸öµã£¬Ìí¼Ó²ÎÊı
-    fitPoints = reparamPoints;
-    /*fitParams = reparamKnots;*/
-    inner = GeomAPI_PointsToBSpline(
-        reparamPoints,
-        reparamKnots,
-        theCurve->Degree(),
-        theCurve->Degree(),
-        GeomAbs_C0,
-        1e-7
-    );
-
-    return inner;
+    return 0;
 }
 
-//Handle(Geom_BSplineCurve) CurveFair::ComputeInnerByArcReparam(const Handle(Geom_BSplineCurve)& theCurve, const Standard_Real tol)
-//{
-//    // »ñÈ¡Ô­Ê¼ÇúÏßµÄ²ÎÊı·¶Î§
-//    Standard_Real firstParam = theCurve->FirstParameter();
-//    Standard_Real lastParam = theCurve->LastParameter();
-//
-//    // ¼ÆËãÔ­Ê¼ÇúÏßµÄ×Ü»¡³¤
-//    GeomAdaptor_Curve curveAdapter(theCurve);
-//    Standard_Real bsplineLen = 0;
-//    try
-//    {
-//        bsplineLen = GCPnts_AbscissaPoint::Length(curveAdapter, firstParam, lastParam, tol);
-//    }
-//    catch (const Standard_Failure& e)
-//    {
-//        std::cerr << "OpenCASCADE Exception: " << e.GetMessageString() << std::endl;
-//        return nullptr;
-//    }
-//    catch (const std::exception& e)
-//    {
-//        std::cerr << "Standard Exception: " << e.what() << std::endl;
-//        return nullptr;
-//    }
-//    catch (...)
-//    {
-//        std::cerr << "Unknown Exception occurred!" << std::endl;
-//        return nullptr;
-//    }
-//
-//    // µÈ»¡³¤²ÉÑù
-//    Standard_Real avgLen = bsplineLen / (paraNum - 1.0);
-//    TColgp_Array1OfPnt reparamPoints(1, paraNum); // ´æ´¢²ÉÑùµã
-//    TColStd_Array1OfReal reparamParams(1, paraNum); // ´æ´¢»¡³¤²ÎÊı
-//
-//    for (Standard_Integer i = 1; i <= paraNum; i++)
-//    {
-//        Standard_Real curLen = avgLen * (i - 1); // Ä¿±ê»¡³¤
-//
-//        // ¸ù¾İ»¡³¤ÕÒµ½¶ÔÓ¦µÄ²ÎÊı
-//        GCPnts_AbscissaPoint gap(curveAdapter, curLen, firstParam);
-//        if (!gap.IsDone()) {
-//            std::cerr << "Failed to compute abscissa point for length: " << curLen << std::endl;
-//            return nullptr;
-//        }
-//        Standard_Real tparam = gap.Parameter();
-//
-//        // »ñÈ¡ÇúÏßÔÚ²ÎÊı tparam ´¦µÄ¼¸ºÎµã
-//        gp_Pnt P;
-//        theCurve->D0(tparam, P);
-//        reparamPoints.SetValue(i, P);
-//        reparamParams.SetValue(i, curLen); // ²ÎÊıÉèÎª»¡³¤
-//    }
-//
-//    // Ê¹ÓÃ²ÉÑùµãºÍ»¡³¤²ÎÊıÖØĞÂ²åÖµ
-//    
-//    inner = GeomAPI_PointsToBSpline(
-//        reparamPoints,
-//        reparamParams,
-//        theCurve->Degree(),
-//        theCurve->Degree(),
-//        GeomAbs_C0,
-//        1e-7
-//    );
-//
-//    return inner;
-//}
 Eigen::MatrixXd CurveFair::ComputeEnergyMatrix(
     const Handle(Geom_BSplineCurve)& theBSplineCurve,
     const Standard_Integer p,
     const Standard_Integer k,
     const Standard_Real tol)
+
 {
-    // ¿ØÖÆµã¸öÊı
-    Standard_Integer n = theBSplineCurve->NbPoles();
-    // ¿ØÖÆµã
-    TColgp_Array1OfPnt Poles = theBSplineCurve->Poles();
-
-    // ½ÚµãÏòÁ¿
-    std::vector<Standard_Real> Knots;
-    for (Standard_Integer index = theBSplineCurve->KnotSequence().Lower(); index <= theBSplineCurve->KnotSequence().Upper(); index++)
-        Knots.push_back(theBSplineCurve->KnotSequence().Value(index));
-
-    // ¼ÆËã M ¾ØÕó
-    Eigen::MatrixXd M(n, n);
+    const Standard_Integer maxDerivate = k;
+    const Standard_Integer aGaussNum = 30;
+    Standard_Integer aNum = theBSplineCurve->NbPoles();
+    TColStd_Array1OfReal aKnots = theBSplineCurve->Knots();
+    Standard_Integer aDeg = theBSplineCurve->Degree();
+    TColStd_Array1OfReal aKnotSeq = theBSplineCurve->KnotSequence();
+    math_Vector aGaussPnts(1, aGaussNum);
+    math_Vector aGausssWeights(1, aGaussNum);
+    math::GaussPoints(aGaussNum, aGaussPnts);
+    math::GaussWeights(aGaussNum, aGausssWeights);
+    std::vector<Standard_Real> KnotVector = ConvertToVector(aKnots);
+    std::vector<Standard_Real> KnotSeqVector = ConvertToVector(aKnotSeq);
+    Eigen::MatrixXd M(aNum, aNum);
     M.setZero();
-
-    // Ô­Ê¼¿ØÖÆµã
-    Eigen::MatrixXd D0(n, 3);
-    for (Standard_Integer i = 0; i < n; i++)
+    //æ±‚è§£Bæ ·æ¡åŸºå‡½æ•°ä»¥if*Nullçš„ç§¯åˆ†
+    for (Standard_Integer i = aKnots.Lower(); i < aKnots.Upper(); ++i)
     {
-        D0(i, 0) = Poles.Value(i + 1).X();
-        D0(i, 1) = Poles.Value(i + 1).Y();
-        D0(i, 2) = Poles.Value(i + 1).Z();
-    }
-
-    // ¼ÆËãµ±Ç°ÇúÏßµÄ»¡³¤²ÎÊı»¯f(t)
-    ComputeInnerByArcReparam(theBSplineCurve);
-
-    //-------------------------------------------------------------------------------
-    //                             ÑéÖ¤»ùº¯ÊıÇóµ¼¹«Ê½£¨ÕıÈ·£©
-    //-------------------------------------------------------------------------------
-
-       // ²âÊÔ²ÎÊı u
-   Standard_Real u = 0.5; // ²âÊÔ²ÎÊı
-
-   // Ê¹ÓÃOCCT¼ÆËãµ¼Êı
-   gp_Vec occtDerivative1 = theBSplineCurve->DN(u, 1); // Ò»½×µ¼Êı
-   gp_Vec occtDerivative2 = theBSplineCurve->DN(u, 2); // ¶ş½×µ¼Êı
-
-   // Ê¹ÓÃ»ùº¯Êı¼ÆËãµ¼Êı
-   gp_Vec basisDerivative1(0.0, 0.0, 0.0);
-   gp_Vec basisDerivative2(0.0, 0.0, 0.0);
-   for (Standard_Integer i = 0; i < n; i++)
-   {
-       Standard_Real basisDeriv1 = BasisFunctionDerivative(u, i, p, 1, Knots);
-       Standard_Real basisDeriv2 = BasisFunctionDerivative(u, i, p, 2, Knots);
-       gp_Pnt pole = theBSplineCurve->Pole(i + 1);
-       basisDerivative1 += gp_Vec(pole.X(), pole.Y(), pole.Z()) * basisDeriv1;
-       basisDerivative2 += gp_Vec(pole.X(), pole.Y(), pole.Z()) * basisDeriv2;
-   }
-
-   // ´òÓ¡½á¹û
-   std::cout << "OCCT 1st Derivative: " << occtDerivative1.X() << ", " << occtDerivative1.Y() << ", " << occtDerivative1.Z() << std::endl;
-   std::cout << "Basis 1st Derivative: " << basisDerivative1.X() << ", " << basisDerivative1.Y() << ", " << basisDerivative1.Z() << std::endl;
-   std::cout << "OCCT 2nd Derivative: " << occtDerivative2.X() << ", " << occtDerivative2.Y() << ", " << occtDerivative2.Z() << std::endl;
-   std::cout << "Basis 2nd Derivative: " << basisDerivative2.X() << ", " << basisDerivative2.Y() << ", " << basisDerivative2.Z() << std::endl;
-
-   Eigen::MatrixXd Basis1(n, 1);
-   Eigen::MatrixXd Basis2(n, 1);
-   Eigen::MatrixXd Basis3(n, 1);
-   Basis1.setZero();
-   Basis2.setZero();
-   Basis3.setZero();
-   Standard_Real FirstParameter = Knots[0];
-   Standard_Real LastParameter = Knots[Knots.size() - 1];
-   Standard_Real StepParameter = (LastParameter - FirstParameter) / 50;
-   for (Standard_Real u = FirstParameter; u <= LastParameter; u += StepParameter)
-   {
-       Standard_Real newU = f(u);
-       Standard_Real u1 = f(u, 1);
-       Standard_Real u2 = f(u, 2);
-       Standard_Real u3 = f(u, 3);
-
-       for (Standard_Integer i = 0; i < n; i++)
-       {
-           Standard_Real BasisDerivate1 = BasisFunctionDerivative(newU, i, p, 1, Knots) * u1;
-           Basis1(i, 0) = BasisDerivate1;
-
-           Standard_Real BasisDerivate2 = BasisFunctionDerivative(newU, i, p, 2, Knots) * u1 * u1 + BasisFunctionDerivative(newU, i, p, 1, Knots) * u2;
-           Basis2(i, 0) = BasisDerivate2;
-
-           Standard_Real BasisDerivate3 = BasisFunctionDerivative(newU, i, p, 3, Knots) * u1 * u1 * u1 + 
-               3 * BasisFunctionDerivative(newU, i, p, 2, Knots) * u1 * u2 + 
-               BasisFunctionDerivative(newU, i, p, 1, Knots) * u3;
-           Basis3(i, 0) = BasisDerivate3;
-
-           //Standard_Real BasisDerivate1 = BasisFunctionDerivative(newU, i, p, 1, Knots);
-           //Basis1(i, 0) = BasisDerivate1;
-
-           //Standard_Real BasisDerivate2 = BasisFunctionDerivative(newU, i, p, 2, Knots);
-           //Basis2(i, 0) = BasisDerivate2;
-
-           //Standard_Real BasisDerivate3 = BasisFunctionDerivative(newU, i, p, 3, Knots);
-           //Basis3(i, 0) = BasisDerivate3;
-       }
-
-       Eigen::MatrixXd Temp1 = D0.transpose() * Basis1;
-       Eigen::MatrixXd Temp2 = D0.transpose() * Basis2;
-       Eigen::MatrixXd Temp3 = D0.transpose() * Basis3;
-
-       gp_Vec Derivate1 = gp_Vec(Temp1(0, 0), Temp1(1, 0), Temp1(2, 0));
-       gp_Vec Derivate2 = gp_Vec(Temp2(0, 0), Temp2(1, 0), Temp2(2, 0));
-       gp_Vec Derivate3 = gp_Vec(Temp3(0, 0), Temp3(1, 0), Temp3(2, 0));
-
-       // »ùÓÚ»¡³¤²ÎÊı»¯
-       gp_Vec StandardDerivateVector1 = theBSplineCurve->DN(newU, 1) * u1;
-       gp_Vec StandardDerivateVector2 = theBSplineCurve->DN(newU, 2) * u1 * u1 + theBSplineCurve->DN(newU, 1) * u2;
-       gp_Vec StandardDerivateVector3 = theBSplineCurve->DN(newU, 3) * u1 * u1 * u1 + theBSplineCurve->DN(newU, 2) * u1 * u2 + theBSplineCurve->DN(newU, 1) * u3;
-
-       // »ùÓÚÔ­Ê¼ÇúÏß
-       /*gp_Vec StandardDerivateVector1 = theBSplineCurve->DN(newU, 1);
-       gp_Vec StandardDerivateVector2 = theBSplineCurve->DN(newU, 2);
-       gp_Vec StandardDerivateVector3 = theBSplineCurve->DN(newU, 3);*/
-
-       std::cout << "»ùº¯ÊıÇóµÃÒ»½×µ¼Êı: " << format_as(Derivate1) << std::endl;
-       std::cout << "»ùº¯ÊıÇóµÃ¶ş½×µ¼Êı: " << format_as(Derivate2) << std::endl;
-       std::cout << "»ùº¯ÊıÇóµÃÈı½×µ¼Êı: " << format_as(Derivate3) << std::endl;
-       std::cout << "Ö±½Ó»ùÓÚÇúÏßµÄÒ»½×µ¼Êı: " << format_as(StandardDerivateVector1) << std::endl;
-       std::cout << "Ö±½Ó»ùÓÚÇúÏßµÄ¶ş½×µ¼Êı: " << format_as(StandardDerivateVector2) << std::endl;
-       std::cout << "Ö±½Ó»ùÓÚÇúÏßµÄÈı½×µ¼Êı: " << format_as(StandardDerivateVector3) << std::endl;
-       std::cout << "»¡³¤²ÎÊı»¯ÇóµÃÇúÂÊ(ĞŞÕı): " << Derivate2.Magnitude() / Derivate1.Magnitude() / Derivate1.Magnitude() << std::endl;
-       std::cout << "¹«Ê½Çó½âÇúÂÊ:" << MathTool::ComputeCurveCurvature(theBSplineCurve, newU) << std::endl;
-       std::cout << "ÇúÂÊ±ÈÖµ:" << Derivate2.Magnitude() / MathTool::ComputeCurveCurvature(theBSplineCurve, newU) << std::endl;
-       std::cout << "¹«Ê½Çó½âÇúÂÊ±ä»¯ÂÊ:" << MathTool::ComputeCurveCurvatureDerivative(theBSplineCurve, newU) << std::endl;
-       std::cout << "ÇúÂÊ±ä»¯ÂÊ±ÈÖµ:" << Derivate3.Magnitude() / MathTool::ComputeCurveCurvatureDerivative(theBSplineCurve, newU) << std::endl;
-
-       std::cout << "------------------------------------------------------------------------" << std::endl;
-
-       //if (std::abs(Derivate2.Magnitude() - StandardDerivateVector2.Magnitude()) > 0.01)
-       //{
-       //    std::cout << "Error::¶ş½×µ¼Êı²»ÏàµÈ" << std::endl;
-       //}
-       //if (std::abs(Derivate3.Magnitude() - StandardDerivateVector3.Magnitude()) > 0.01)
-       //{
-       //    std::cout << "Error::¶ş½×µ¼Êı²»ÏàµÈ" << std::endl;
-       //}
-       
-   }
-
-   // ¼ÆËã M ¾ØÕó, Ö»Ìî³ä 1 µ½ (n - 1)µÄ¿ØÖÆµã
-
-   for (Standard_Integer i = 0; i < n; ++i)
-    {
-        for (Standard_Integer j = 0; j < n; ++j)
+        Standard_Real sStart = f_inverse(theBSplineCurve, aKnots[i]);
+        Standard_Real sEnd = f_inverse(theBSplineCurve, aKnots[i + 1]);
+        Standard_Real t;
+        //å°†å„æ®µçš„ä¸¤ä¸ªé«˜æ–¯ç§¯åˆ†ç‚¹ç›¸åŠ 
+        for (Standard_Integer GaussIndex = 0; GaussIndex < aGaussNum; ++GaussIndex)
         {
-            Standard_Real integral = ComputeDerivativeIntegral(Knots, i, j, p, k, tol);
-            M(i, j) = integral;
+            t = (sEnd - sStart) * aGaussPnts(aGaussNum - GaussIndex) / 2.0 + (sStart + sEnd) / 2.0;
+            Standard_Integer aFirstIndex;
+            math_Matrix aBsplineBasis(1, maxDerivate + 1, 1, aDeg + 1);
+            BSplCLib::EvalBsplineBasis(maxDerivate, aDeg + 1, aKnotSeq, f(t), aFirstIndex, aBsplineBasis);
 
-            // M(i, j)Îª¶Ô³Æ¾ØÕó
-            if (i != j)
+            // è®¡ç®—f(t)åŠå…¶å¯¼æ•°
+            Standard_Real f0 = f(t, 0);   // f(t)
+            Standard_Real f1 = f(t, 1);   // f'(t)
+            Standard_Real f2 = f(t, 2);   // f''(t)
+            Standard_Real f3 = f(t, 3);   // f'''(t)
+            for (Standard_Integer m = 0; m < aDeg + 1; ++m)
             {
-                M(j, i) = M(i, j);
+                Standard_Integer globalI = m + aFirstIndex - 1;
+                // åŸå§‹ k é˜¶å¯¼æ•° å‚æ•° t
+                Standard_Real d1Ni = BasisFunctionDerivative(t, globalI, p, 1, KnotSeqVector);
+                Standard_Real d2Ni = BasisFunctionDerivative(t, globalI, p, 2, KnotSeqVector);
+                Standard_Real d3Ni = BasisFunctionDerivative(t, globalI, p, 3, KnotSeqVector);
+                // å¼§é•¿å‚æ•°åŒ– k é˜¶å¯¼æ•° å‚æ•° f(t)
+                Standard_Real d1Ni_df1  = BasisFunctionDerivative(f0, globalI, p, 1, KnotSeqVector);
+                Standard_Real d2Ni_df2 = BasisFunctionDerivative(f0, globalI, p, 2, KnotSeqVector);
+                Standard_Real d3Ni_df3 = BasisFunctionDerivative(f0, globalI, p, 3, KnotSeqVector);
+
+                // è®¡ç®—å¼§é•¿å‚æ•°åŒ–é“¾å¼æ±‚å¯¼çš„ä¸‰é˜¶å¯¼æ•°
+                Standard_Real D1Ni_Dt1 = d1Ni_df1 * f1;
+                Standard_Real D2Ni_Dt2 = d2Ni_df2 * pow(f1, 2) + 3 * d1Ni_df1 * f2;
+                Standard_Real D3Ni_Dt3 = d3Ni_df3 * pow(f1, 3) + 3 * d2Ni_df2 * f1 * f2 + d1Ni_df1 * f3;
+
+                for (Standard_Integer n = 0; n < aDeg + 1; ++n)
+                {
+                    Standard_Integer globalJ = n + aFirstIndex - 1;
+                    // åŸå§‹ k é˜¶å¯¼æ•° å‚æ•° t
+                    Standard_Real d1Nj = BasisFunctionDerivative(t, globalJ, p, 1, KnotSeqVector);
+                    Standard_Real d2Nj = BasisFunctionDerivative(t, globalJ, p, 2, KnotSeqVector);
+                    Standard_Real d3Nj = BasisFunctionDerivative(t, globalJ, p, 3, KnotSeqVector);
+                    // å¼§é•¿å‚æ•°åŒ– k é˜¶å¯¼æ•° å‚æ•° f(t)
+                    Standard_Real d1Nj_df1 = BasisFunctionDerivative(f0, globalJ, p, 1, KnotSeqVector);
+                    Standard_Real d2Nj_df2 = BasisFunctionDerivative(f0, globalJ, p, 2, KnotSeqVector);
+                    Standard_Real d3Nj_df3 = BasisFunctionDerivative(f0, globalJ, p, 3, KnotSeqVector);
+                    // è®¡ç®—å¼§é•¿å‚æ•°åŒ–é“¾å¼æ±‚å¯¼çš„ä¸‰é˜¶å¯¼æ•°
+                    Standard_Real D1Nj_Dt1 = d1Nj_df1 * f1;
+                    Standard_Real D2Nj_Dt2 = d2Nj_df2 * pow(f1, 2) + 3 * d1Nj_df1 * f2;
+                    Standard_Real D3Nj_Dt3 = d3Nj_df3 * pow(f1, 3) + 3 * d2Nj_df2 * f1 * f2 + d1Nj_df1 * f3;
+
+                    // å¼§é•¿å‚æ•°åŒ–ä¸‰é˜¶å¯¼æ•°
+                    Standard_Real aElement =
+                        D3Ni_Dt3 *
+                        D3Nj_Dt3 *
+                        aGausssWeights(aGaussNum - GaussIndex) * (sEnd - sStart) / 2.0;
+                    M(globalI, globalJ) += aElement;
+
+                }
             }
         }
     }
 
+    //std::cout << M << std::endl;
+    //Standard_Real maxVal = M.maxCoeff();
+    //if (maxVal > 0)
+    //{
+    //    M /= maxVal;
+    //}
+    //std::cout << M << std::endl;
     return M;
 }
-Handle(Geom_BSplineCurve) CurveFair::GetCurrentFairCurve(const Handle(Geom_BSplineCurve)& theCurve, Eigen::MatrixXd M, Eigen::MatrixXd V, Eigen::MatrixXd D0, Eigen::MatrixXd& D, Standard_Real alpha)
+
+Standard_Boolean isPositiveDefinite(const Eigen::MatrixXd& A) 
 {
-    Standard_Real ContorlPointOffset;
-    Standard_Real CurveHausdorffDistance;
-    Standard_Integer cnt = 0;
-    Standard_Integer n = D0.rows();
-    Standard_Real LastControlPointOffset = ControlPointOffsetTol;
-    do
+    if (A.rows() != A.cols()) return Standard_False;
+    Eigen::LLT<Eigen::MatrixXd> llt(A);
+    return llt.info() == Eigen::Success;
+}
+
+Standard_Boolean isNegativeDefinite(const Eigen::MatrixXd& A) 
+{
+    // æ£€æŸ¥æ˜¯å¦å¯¹ç§°
+    if (!A.isApprox(A.transpose(), 1e-8)) 
     {
-        Eigen::MatrixXd temp = (alpha * M + V);
-        Eigen::MatrixXd temp_inverse = temp.inverse();
+        return Standard_False; // éå¯¹ç§°çŸ©é˜µæ—¢ä¸æ˜¯è´Ÿå®šä¹Ÿä¸æ˜¯æ­£å®š
+    }
 
-        D = temp_inverse * V * D0;
-        D(0, 0) = FirstPole.X();
-        D(0, 1) = FirstPole.Y();
-        D(0, 2) = FirstPole.Z();
-        D(n - 1, 0) = LastPole.X();
-        D(n - 1, 1) = LastPole.Y();
-        D(n - 1, 2) = LastPole.Z();
-        //std::cout << "Alpha" << std::endl << alpha << std::endl;
-        //std::cout << "M" << std::endl << format_as(M) << std::endl;
-        //std::cout << "V" << std::endl << format_as(V) << std::endl;
-        //std::cout << "Alpha * M" << std::endl << format_as(alpha * M) << std::endl;
-        //std::cout << "Temp" << std::endl << format_as(temp) << std::endl;
-        //std::cout << "Temp_Inverse" << std::endl << format_as(temp_inverse) << std::endl;
-        //std::cout << "D0" << std::endl << format_as(Poles) << std::endl;
-        //std::cout << "D" << std::endl << format_as(D) << std::endl;
+    // è®¡ç®—ç‰¹å¾å€¼
+    Eigen::SelfAdjointEigenSolver<Eigen::MatrixXd> solver(A);
+    if (solver.info() != Eigen::Success) 
+    {
+        throw std::runtime_error("Eigen decomposition failed");
+    }
 
+    // æ£€æŸ¥æ‰€æœ‰ç‰¹å¾å€¼æ˜¯å¦ < 0
+    return (solver.eigenvalues().array() < 0).all();
+}
 
-        Handle(Geom_BSplineCurve) ResultCurve = CreateNewBSplineCurve(m_OriginalCurve, D);
-        ContorlPointOffset = GetControlPointsOffset(m_OriginalCurve->Poles(), ResultCurve->Poles());
-        CurveHausdorffDistance = GetCurveCurveHausdorffDistance(m_OriginalCurve, ResultCurve);
-        //std::cout << "Cnt:" << cnt << std::endl;
-        //std::cout << "Alpha:" << alpha << std::endl;
-        //std::cout << "HausdorffDistance:" << CurveHausdorffDistance << std::endl;
-        //std::cout << "ControlPointOffset" << ContorlPointOffset << std::endl;
-        if (cnt++ > 100)
+Handle(Geom_BSplineCurve) CurveFair::GetCurrentFairCurve(
+    const Handle(Geom_BSplineCurve)& theCurve,
+    Eigen::MatrixXd M,
+    Eigen::MatrixXd V,
+    Eigen::MatrixXd& D0,
+    Eigen::MatrixXd& D,
+    Standard_Real alpha)
+{
+    // åˆ¤æ–­æ˜¯å¦æ­£å®š
+    std::cout << M.determinant() << std::endl;  // è¡Œåˆ—å¼
+    Standard_Boolean M_Positive = isPositiveDefinite(M);
+    Standard_Boolean M_Negative = isNegativeDefinite(M);
+    Standard_Boolean aM_Positive = isPositiveDefinite(alpha * M + V);
+    Standard_Boolean aM_Negative = isNegativeDefinite(alpha * M + V);
+
+    // æ§åˆ¶ç‚¹çš„æ€»æ•°
+    Standard_Integer n = D0.rows();
+    
+    // å›ºå®šæ§åˆ¶ç‚¹
+    Eigen::Vector3d D0_start = D0.row(0);
+    Eigen::Vector3d D0_end = D0.row(n - 1);
+
+    // è·å–éœ€è¦ä¼˜åŒ–çš„æ§åˆ¶ç‚¹åŸå§‹å€¼
+    Eigen::MatrixXd D0_internal = D0.block(1, 0, n - 2, 3);
+    Eigen::VectorXd D0_internal_x = D0.col(0).segment(1, n - 2);  // xåˆ†é‡
+    Eigen::VectorXd D0_internal_y = D0.col(1).segment(1, n - 2);  // yåˆ†é‡
+    Eigen::VectorXd D0_internal_z = D0.col(2).segment(1, n - 2);  // zåˆ†é‡
+
+    // A = Î± * M_internal + V_internal
+    // è·å–éœ€è¦ä¼˜åŒ–çš„æ§åˆ¶ç‚¹å¯¹åº”çš„ M çŸ©é˜µå’Œ V çŸ©é˜µ
+    Eigen::MatrixXd M_internal = M.block(1, 1, n - 2, n - 2);
+    Eigen::MatrixXd V_internal = V.block(1, 1, n - 2, n - 2);
+
+    Standard_Integer ComputeTimes = 0;
+    Handle(Geom_BSplineCurve) ResultCurve;
+    while (Standard_True)
+    {
+        ComputeTimes++;
+        Eigen::MatrixXd A = alpha * M_internal + V_internal;
+
+        // åˆ†åˆ«æ±‚è§£xã€yã€zåˆ†é‡
+        Eigen::VectorXd b_x = Eigen::VectorXd::Zero(n - 2);
+        Eigen::VectorXd b_y = Eigen::VectorXd::Zero(n - 2);
+        Eigen::VectorXd b_z = Eigen::VectorXd::Zero(n - 2);
+
+        // å‡å»é¦–å°¾æ§åˆ¶ç‚¹çš„å½±å“ï¼Œåˆ†åˆ«è®¡ç®—æ¯ä¸ªåˆ†é‡çš„b
+        for (Standard_Integer k = 0; k < n - 2; k++)
         {
-            Standard_Real Minus = std::abs(ContorlPointOffset - LastControlPointOffset);
-            std::cout << "Minus:" << Minus << std::endl;
-            if (Minus < 1e-3)
-            {
-                return ResultCurve;
-            }
+            Standard_Real D0_term_x = M(0, k + 1) * D0_start.x();
+            Standard_Real D0_term_y = M(0, k + 1) * D0_start.y();
+            Standard_Real D0_term_z = M(0, k + 1) * D0_start.z();
+            Standard_Real Dn_term_x = M(n - 1, k + 1) * D0_end.x();
+            Standard_Real Dn_term_y = M(n - 1, k + 1) * D0_end.y();
+            Standard_Real Dn_term_z = M(n - 1, k + 1) * D0_end.z();
+
+            Standard_Real reg_term_x = V_internal(k, k) * D0_internal_x(k);
+            Standard_Real reg_term_y = V_internal(k, k) * D0_internal_y(k);
+            Standard_Real reg_term_z = V_internal(k, k) * D0_internal_z(k);
+
+            b_x(k) = -alpha * (D0_term_x + Dn_term_x) + reg_term_x;
+            b_y(k) = -alpha * (D0_term_y + Dn_term_y) + reg_term_y;
+            b_z(k) = -alpha * (D0_term_z + Dn_term_z) + reg_term_z;
         }
-        if (ContorlPointOffset > ControlPointOffsetTol)
+
+        Eigen::JacobiSVD<Eigen::MatrixXd> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV);
+        Eigen::MatrixXd A_pinv = svd.solve(Eigen::MatrixXd::Identity(A.rows(), A.cols()));
+        Eigen::VectorXd D_internal_x = A_pinv * b_x;
+        Eigen::VectorXd D_internal_y = A_pinv * b_y;
+        Eigen::VectorXd D_internal_z = A_pinv * b_z;
+
+        // åˆå¹¶ç»“æœ
+        Eigen::MatrixXd D_internal(n - 2, 3);
+        D_internal.col(0) = D_internal_x;
+        D_internal.col(1) = D_internal_y;
+        D_internal.col(2) = D_internal_z;
+
+        // æ„å»ºæœ€ç»ˆæ§åˆ¶ç‚¹çŸ©é˜µ
+        D = Eigen::MatrixXd::Zero(n, 3);
+        D.row(0) = D0_start;                    // èµ·å§‹ç‚¹
+        D.block(1, 0, n - 2, 3) = D_internal;   // å†…éƒ¨ç‚¹
+        D.row(n - 1) = D0_end;                  // ç»ˆæ­¢ç‚¹
+
+        // åˆ›å»ºæ–°çš„Bæ ·æ¡æ›²çº¿
+        ResultCurve = CreateNewBSplineCurve(m_OriginalCurve, D);
+
+        // è®¡ç®—æ–°æ—§æ›²çº¿çš„æ§åˆ¶ç‚¹åå·®
+        Standard_Real ControlPointsOffset = CurveFair::GetControlPointsOffset(m_OriginalCurve->Poles(), ResultCurve->Poles());
+
+        // è®¡ç®—æ–°æ›²çº¿çš„èƒ½é‡
+        Standard_Real XEnergy = D.col(0).transpose() * M * D.col(0);
+        Standard_Real YEnergy = D.col(1).transpose() * M * D.col(1);
+        Standard_Real ZEnergy = D.col(2).transpose() * M * D.col(2);
+        std::cout << "XEnergy: " << XEnergy << std::endl;
+        std::cout << "YEnergy: " << YEnergy << std::endl;
+        std::cout << "ZEnergy: " << ZEnergy << std::endl;
+        FairEnergy = alpha *
+            (D.col(0).transpose() * M * D.col(0) +
+                D.col(1).transpose() * M * D.col(1) +
+                D.col(2).transpose() * M * D.col(2)).value();
+        std::cout << "-----------" << std::endl;
+        std::cout << OriEnergy << std::endl;
+        std::cout << FairEnergy << std::endl;
+        TempIteratorArray.push_back(ResultCurve);
+        if (ControlPointsOffset <= ControlPointOffsetTol || ComputeTimes >= 100)
         {
-            std::cout << "ContorlPointOffset:" << ContorlPointOffset << std::endl;
-            alpha /= 1.5;
+            break;
         }
         else
         {
-            return ResultCurve;
-            break;
+            alpha /= 2;
         }
-        LastControlPointOffset = ContorlPointOffset;
-    } while (Standard_True);
+
+    }
+    return ResultCurve;
 }
 
 void CurveFair::Iterator(Eigen::MatrixXd D0, Eigen::MatrixXd D)
 {
-    // ·Ö²½ÒÆ¶¯²ÎÊı
-    int n = D0.rows();
+    // åˆ†æ­¥ç§»åŠ¨å‚æ•°
+    Standard_Integer n = D0.rows();
     Standard_Real stepSize = 10;
     Standard_Integer stepCnt = 0;
     Standard_Real ContorlPointOffset;
     Standard_Real LastControlPointOffset = ControlPointOffsetTol;
     while (Standard_True)
     {
-        // ¼ÆËãÏÂÒ»²½µÄÎ»ÖÃ
-        D0 += (D - D0) / stepSize;
+        std::cout << D - D0 << std::endl;
+        std::cout << "---" << std::endl;
+        std::cout << D0 << std::endl;
+        std::cout << "---" << std::endl;
+        // è®¡ç®—ä¸‹ä¸€æ­¥çš„ä½ç½®
+        D0 += (D - D0) / 10;
         stepCnt++;
-        // ¹Ì¶¨Ê×Î²¿ØÖÆµã
-        D0.row(0) << FirstPole.X(), FirstPole.Y(), FirstPole.Z();
-        D0.row(n - 1) << LastPole.X(), LastPole.Y(), LastPole.Z();
 
-        // Éú³ÉĞÂÇúÏß
+        // ç”Ÿæˆæ–°æ›²çº¿
         Handle(Geom_BSplineCurve) aCurve = CreateNewBSplineCurve(m_OriginalCurve, D0);
-        ComputeInnerByArcReparam(aCurve);
+        TempInitialArray.push_back(aCurve);
+
+        ComputeInnerByArcReparam(aCurve); // è®¡ç®—f(t)
         M = ComputeEnergyMatrix(aCurve, m_OriginalCurve->Degree(), k);
-
-        Eigen::MatrixXd V(n, n);
-        V.setIdentity();
-
         aCurve = GetCurrentFairCurve(aCurve, M, V, D0, D, alpha);
-        ContorlPointOffset = GetControlPointsOffset(m_OriginalCurve->Poles(), aCurve->Poles());
-        if (ContorlPointOffset > ControlPointOffsetTol || stepCnt == stepSize)
+        TempResultArray.push_back(aCurve);
+
+        //ContorlPointOffset = GetControlPointsOffset(m_OriginalCurve->Poles(), aCurve->Poles());
+        if (stepCnt == stepSize)
         {
             break;
         }
@@ -989,30 +1083,71 @@ void CurveFair::Iterator(Eigen::MatrixXd D0, Eigen::MatrixXd D)
 
 void CurveFair::Perform(const Handle(Geom_BSplineCurve)& theCurve)
 {
-    ComputeInnerByArcReparam(theCurve);
-    M = ComputeEnergyMatrix(m_OriginalCurve, m_OriginalCurve->Degree(), k);
+    ComputeInnerByArcReparam(theCurve); // å¼§é•¿å‚æ•°åŒ–çš„å˜æ¢f
+    M = ComputeEnergyMatrix(theCurve, theCurve->Degree(), k);
+
+    V.resize(theCurve->NbPoles(), theCurve->NbPoles());
+    V.setZero();
+    std::vector<Standard_Real> grevilleAbscissae(theCurve->NbPoles());
+    for (Standard_Integer i = 0; i < theCurve->NbPoles(); i++)
+    {
+        Standard_Real sum = 0.0;
+        for (Standard_Integer j = 1; j <= theCurve->Degree(); j++)
+        {
+            Standard_Real aKnotValue = myKnotSeq[i + j];
+            aKnotValue = f_inverse(theCurve, aKnotValue);
+            sum += aKnotValue;
+        }
+        grevilleAbscissae[i] = sum / theCurve->Degree();
+    }
+
+    std::vector<Standard_Real> curvatureRates(theCurve->NbPoles());
+    for (Standard_Integer i = 0; i < theCurve->NbPoles(); i++)
+    {
+        Standard_Real f0 = f(grevilleAbscissae[i]);
+        Standard_Real f1 = f(grevilleAbscissae[i], 1);
+        Standard_Real f2 = f(grevilleAbscissae[i], 2);
+        Standard_Real f3 = f(grevilleAbscissae[i], 3);
+
+        // Ni
+        Standard_Real Curvature = BasisFunctionDerivative(f0, i, theCurve->Degree(), 3, myKnotSeq) * pow(f1, 3)
+            + 3 * BasisFunctionDerivative(f0, i, theCurve->Degree(), 2, myKnotSeq) * f1 * f2
+            + BasisFunctionDerivative(f0, i, theCurve->Degree(), 1, myKnotSeq) * f3;
+
+        curvatureRates[i] = Curvature * Curvature;
+    }
+
+    Standard_Real minRate = *std::min_element(curvatureRates.begin(), curvatureRates.end());
+    Standard_Real maxRate = *std::max_element(curvatureRates.begin(), curvatureRates.end());
+
+    for (Standard_Integer i = 0; i < theCurve->NbPoles(); i++)
+    {
+        // å½’ä¸€åŒ– curvatureRate åˆ° [0,1]
+        Standard_Real normalized = (curvatureRates[i] - minRate) / (maxRate - minRate + 1e-9);
+        // æ˜ å°„åˆ° [1.0, 0.1]
+        Standard_Real weight = 1.0 - 0.5 * normalized; 
+        V(i, i) = weight;
+    }
+
+
+    std::cout << V << std::endl;
+    TempInitialArray.push_back(theCurve);
     TColgp_Array1OfPnt Poles = theCurve->Poles();
     Standard_Integer n = theCurve->NbPoles();
-    Eigen::MatrixXd V(n, n);
-    V.setIdentity();  // ³õÊ¼»¯VÎªµ¥Î»¾ØÕó
 
-    Eigen::MatrixXd D0(n, 3);
-    Eigen::MatrixXd D(n, 3);
+    Eigen::MatrixXd D0(n, 3); // åŸå§‹æ§åˆ¶ç‚¹
+    Eigen::MatrixXd D(n, 3); // æ–°æ§åˆ¶ç‚¹
     for (Standard_Integer i = 0; i < n; i++)
     {
         D0(i, 0) = Poles.Value(i + 1).X();
         D0(i, 1) = Poles.Value(i + 1).Y();
         D0(i, 2) = Poles.Value(i + 1).Z();
     }
+    // åˆå§‹èƒ½é‡
+    OriEnergy = alpha * (D0.col(0).transpose() * M * D0.col(0) + D0.col(1).transpose() * M * D0.col(1) + D0.col(2).transpose() * M * D0.col(2)).value();
 
+    // è·å–ä¼˜åŒ–æ›²çº¿
     m_ResultCurve = GetCurrentFairCurve(theCurve, M, V, D0, D, alpha);
+    TempResultArray.push_back(m_ResultCurve);
     Iterator(D0, D);
 }
-
-std::string to_string(Standard_Real value, Standard_Integer precision)
-{
-    std::ostringstream oss;
-    oss << std::fixed << std::setprecision(precision) << value;
-    return oss.str();
-}
-
