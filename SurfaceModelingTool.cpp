@@ -1138,7 +1138,13 @@ void SurfaceModelingTool::CreateLoftingSurface(const std::vector<Handle(Geom_BSp
 	}
 }
 
-Handle(Geom_BSplineCurve) IterateApproximate(std::vector<Standard_Real>& InsertKnots, const std::vector<gp_Pnt>& Pnts, std::vector<Standard_Real>& PntsParams, std::vector<Standard_Real>& InitKnots, Standard_Integer degree, Standard_Integer MaxIterNum, Standard_Real toler)
+Handle(Geom_BSplineCurve) IterateApproximate(std::vector<Standard_Real>& InsertKnots, 
+	const std::vector<gp_Pnt>& Pnts, 
+	std::vector<Standard_Real>& PntsParams, 
+	std::vector<Standard_Real>& InitKnots, 
+	Standard_Integer degree, 
+	Standard_Integer MaxIterNum, 
+	Standard_Real toler)
 {
 	Standard_Integer itNum = 1;
 	Standard_Real currentMaxError = 100;
@@ -2261,6 +2267,7 @@ void SurfaceModelingTool::LoadBSplineCurves(const std::string& filePath, std::ve
 		{
 			// 如果是直线，转换为BSpline
 			Handle(Geom_TrimmedCurve) aTrimmedLine = new Geom_TrimmedCurve(gcurve, first, last);
+			
 			Handle(Geom_BSplineCurve) aGeom_BSplineCurve = GeomConvert::CurveToBSplineCurve(aTrimmedLine);
 			if (!aGeom_BSplineCurve.IsNull() && aGeom_BSplineCurve->IsKind(STANDARD_TYPE(Geom_BSplineCurve)))
 			{
@@ -4869,6 +4876,8 @@ Standard_Real MathTool::ComputeCurveCurvatureDerivative(const Handle(Geom_BSplin
 
 	return dkdu;
 }
+
+
 Handle(Geom_BSplineCurve) IterateApproximate(std::vector<Standard_Real>& InsertKnots,
 	const std::vector<gp_Pnt>& Pnts,
 	const gp_Vec& FirstD1, const gp_Vec& LastD1,
@@ -4884,7 +4893,7 @@ Handle(Geom_BSplineCurve) MathTool::CreateCircleApproximation(Standard_Real radi
 	// 计算控制点的位置
 	for (Standard_Integer i = 0; i < numControlPoints; i++)
 	{
-		Standard_Real angle = 2 * M_PI * i / (numControlPoints - 1); // 均匀分布角度
+		Standard_Real angle = 3 * M_PI / 2 * i / (numControlPoints - 1); // 均匀分布角度
 		Standard_Real x = radius * cos(angle);
 		Standard_Real y = radius * sin(angle);
 		controlPoints.SetValue(i + 1, gp_Pnt(x, y, 0.0)); // 设置控制点
