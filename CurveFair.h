@@ -22,30 +22,34 @@
 #include <TopoDS.hxx>
 #include <GeomConvert_BSplineCurveToBezierCurve.hxx>
 #include <Interface_Static.hxx>
-const Standard_Real HAUSDORFFDISTANCETOL = 10;
-const Standard_Real CONTROLPOINTOFFSETTOL = 100;
+const Standard_Real HAUSDORFFDISTANCETOL = 50;
+const Standard_Real CONTROLPOINTOFFSETTOL = 50;
 const Standard_Real ALPHA = 1;
 class CurveFair
 {
 public:
-    CurveFair(Handle(Geom_BSplineCurve) theBSplineCurve, Standard_Real paraNum, Standard_Integer k,
-        Standard_Real alpha = ALPHA, Standard_Real ControlPointOffsetTol = CONTROLPOINTOFFSETTOL, Standard_Real HausdorffDistanceTol = HAUSDORFFDISTANCETOL,
-        Standard_Boolean refit = Standard_False, Standard_Integer refitNums = 20)
+    // theBSplineCurve 
+    // theFitPoints
+    // theHausdorffDistance
+    // theErrorMessage/ErrorCode
+    CurveFair(Handle(Geom_BSplineCurve) theBSplineCurve, Standard_Real theParaNum, Standard_Integer k,
+        Standard_Real theAlpha = ALPHA, Standard_Real theControlPointOffsetTol = CONTROLPOINTOFFSETTOL, Standard_Real HausdorffDistanceTol = HAUSDORFFDISTANCETOL,
+        Standard_Boolean theRefitFlag = Standard_False, Standard_Integer theRefitNum = 20)
     {
         outer = theBSplineCurve;
         std::vector<gp_Pnt> points;
-        if (refit) // 如果要重新拟合的话
-            outer = SampleAndFitBSpline(outer, refitNums, points);
+        if (theRefitFlag) // 如果要重新拟合的话
+            outer = SampleAndFitBSpline(outer, theRefitNum, points);
 
         // Initialize
-        this->paraNum = paraNum;
-        this->fitParams = TColStd_Array1OfReal(outer->Knots().Lower(), outer->Knots().Lower() + paraNum - 1);
-        this->fitPoints = TColgp_Array1OfPnt(outer->Knots().Lower(), outer->Knots().Lower() + paraNum - 1);
+        this->paraNum = theParaNum;
+        this->fitParams = TColStd_Array1OfReal(outer->Knots().Lower(), outer->Knots().Lower() + theParaNum - 1);
+        this->fitPoints = TColgp_Array1OfPnt(outer->Knots().Lower(), outer->Knots().Lower() + theParaNum - 1);
         this->myKnotSeq = ConvertToVector(outer->KnotSequence());
         this->myKnots = ConvertToVector(outer->Knots());
-        this->alpha = alpha;
+        this->alpha = theAlpha;
         this->HausdorffDistanceTol = HausdorffDistanceTol;
-        this->ControlPointOffsetTol = ControlPointOffsetTol; // 控制点偏差
+        this->ControlPointOffsetTol = theControlPointOffsetTol; // 控制点偏差
         this->k = k;
         this->m_OriginalCurve = outer;
         this->FirstPole = outer->Pole(1); // 第一个控制点

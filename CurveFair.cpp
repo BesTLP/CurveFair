@@ -12,6 +12,36 @@ std::vector<Handle(Geom_BSplineCurve)> CurveFair::TempIteratorArray;
 Handle(Geom_BSplineCurve) CurveFair::inner;
 std::string CurveFair::ExportFilePath;
 
+// 比较两个浮点数是否相等
+bool isEqual(double x, double y, double epsilon = 1e-10)
+{
+    return std::fabs(x - y) < epsilon;
+}
+
+// 比较 x 是否大于 y
+bool isGreaterThan(double x, double y, double epsilon = 1e-10)
+{
+    return (x - y) > epsilon;
+}
+
+// 比较 x 是否小于 y
+bool isLessThan(double x, double y, double epsilon = 1e-10)
+{
+    return (y - x) > epsilon;
+}
+
+// 比较 x 是否大于等于 y
+bool isGreaterThanOrEqual(double x, double y, double epsilon = 1e-10)
+{
+    return (x - y) > -epsilon;
+}
+
+// 比较 x 是否小于等于 y
+bool isLessThanOrEqual(double x, double y, double epsilon = 1e-10)
+{
+    return (y - x) > -epsilon;
+}
+
 std::string format_as(Eigen::MatrixXd M)
 {
     std::stringstream ss;
