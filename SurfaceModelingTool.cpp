@@ -819,18 +819,18 @@ std::vector<Standard_Real> KnotGernerationByMergeKnots(const std::vector<Standar
 	std::vector<Standard_Real> TempB;
 	for (size_t i = 0; i < KnotsB.size(); i++)
 	{
-		if (isEqual(KnotsB[i], 1))
+		if (InterPolateTool::isEqual(KnotsB[i], 1))
 		{
 			break;
 		}
-		if (!isEqual(KnotsB[i], 0))
+		if (!InterPolateTool::isEqual(KnotsB[i], 0))
 		{
 			TempB.push_back(KnotsB[i]);
 		}
 	}
 	Standard_Integer i = 0, j = 0;
 	while (i < KnotsA.size() && j < TempB.size()) {
-		if (islessequal(KnotsA[i], TempB[j])) {
+		if (InterPolateTool::isLessThanOrEqual(KnotsA[i], TempB[j])) {
 			C.push_back(KnotsA[i]);
 			i++;
 		}
@@ -871,18 +871,18 @@ Standard_Real OneBasicFun(Standard_Real u, Standard_Integer i, Standard_Integer 
 	Standard_Real Nip, uleft, uright, saved, temp;
 	Standard_Integer m = Knots.size() - 1;
 	std::vector<Standard_Real>N(p + 1);
-	if ((i == 0 && isEqual(u, Knots[0])) || (i == m - p - 1 && isEqual(u, Knots[m])))
+	if ((i == 0 && InterPolateTool::isEqual(u, Knots[0])) || (i == m - p - 1 && InterPolateTool::isEqual(u, Knots[m])))
 	{
 		return 1.0;
 	}
 
-	if (isLessThan(u, Knots[i]) || isGreaterThanOrEqual(u, Knots[i + p + 1]))
+	if (InterPolateTool::isLessThan(u, Knots[i]) || InterPolateTool::isGreaterThanOrEqual(u, Knots[i + p + 1]))
 	{
 		return 0.0;
 	}
 	for (size_t j = 0; j <= p; j++)
 	{
-		if (isGreaterThanOrEqual(u, Knots[i + j]) && isLessThan(u, Knots[i + j + 1]))
+		if (InterPolateTool::isGreaterThanOrEqual(u, Knots[i + j]) && InterPolateTool::isLessThan(u, Knots[i + j + 1]))
 		{
 			N[j] = 1.0;
 		}
@@ -970,7 +970,7 @@ void sequenceToKnots(const std::vector<Standard_Real>& sequence, std::vector<Sta
 		Standard_Boolean found = Standard_False;
 		for (auto& knot : knotMap)
 		{
-			if (isEqual(value, knot.first, 1e-6))
+			if (InterPolateTool::isEqual(value, knot.first, 1e-6))
 			{
 				knot.second++;
 				found = Standard_True;
@@ -2519,12 +2519,16 @@ void SurfaceModelingTool::GetISOCurveWithNormal(const Handle(Geom_BSplineSurface
 }
 
 
-Standard_Boolean SurfaceModelingTool::ExportBSplineCurves(const std::vector<Handle(Geom_BSplineCurve)>& ISOcurvesArray_Final,
-	const std::string& Filename)
+Standard_Boolean SurfaceModelingTool::ExportBSplineCurves(
+	const std::vector<Handle(Geom_BSplineCurve)>& ISOcurvesArray_Final,
+	const std::string& Filename,
+	const bool overwrite)
 {
 	// 检查目标文件夹是否存在，如果不存在则创建
 	std::filesystem::path filePath(Filename);
 	std::filesystem::path directory = filePath.parent_path();
+	std::string extension = filePath.extension().string(); // 包含点，如 ".step"
+	std::string stem = filePath.stem().string();           // 不含扩展名
 
 	if (!directory.empty() && !std::filesystem::exists(directory))
 	{
@@ -2533,6 +2537,17 @@ Standard_Boolean SurfaceModelingTool::ExportBSplineCurves(const std::vector<Hand
 			std::cerr << "错误：无法创建文件夹 " << directory << std::endl;
 			return Standard_False;
 		}
+	}
+
+	// 如果不允许覆盖且文件存在，生成新的文件名
+	std::filesystem::path finalPath = filePath;
+	if (!overwrite && std::filesystem::exists(finalPath))
+	{
+		int index = 1;
+		do {
+			finalPath = directory / (stem + "_" + std::to_string(index) + extension);
+			++index;
+		} while (std::filesystem::exists(finalPath));
 	}
 
 	// 创建 TopoDS_Compound 对象
@@ -2549,68 +2564,110 @@ Standard_Boolean SurfaceModelingTool::ExportBSplineCurves(const std::vector<Hand
 			continue;
 		}
 
-		// 创建 TopoDS_Edge
 		TopoDS_Edge edge = BRepBuilderAPI_MakeEdge(curve);
-
-		// 检查边是否有效
 		if (edge.IsNull())
 		{
 			std::cerr << "警告：无法创建边，从曲线跳过。" << std::endl;
 			continue;
 		}
 
-		// 将边添加到复合体
 		builder.Add(Result, edge);
 	}
 
-	// 检查是否有有效的边添加到复合体
 	if (Result.IsNull())
 	{
 		std::cerr << "错误：没有有效的曲线被添加到复合体。" << std::endl;
 		return Standard_False;
 	}
 
-	// 检查文件后缀是否为 .step 或 .stp
-	std::string extension = Filename.substr(Filename.find_last_of(".") + 1);
-	if (extension == "step" || extension == "stp")
+	// 根据后缀决定导出格式
+	std::string ext = finalPath.extension().string();
+	if (ext == ".step" || ext == ".stp")
 	{
-		// 使用 STEP 格式导出
 		STEPControl_Writer writer;
 		IFSelect_ReturnStatus status = writer.Transfer(Result, STEPControl_AsIs);
-
-		if (status != IFSelect_RetDone)
+		if (status != IFSelect_RetDone || writer.Write(finalPath.string().c_str()) != IFSelect_RetDone)
 		{
-			std::cerr << "错误：无法将曲线转换为 STEP 格式。" << std::endl;
+			std::cerr << "错误：无法导出到 STEP 文件 " << finalPath << std::endl;
 			return Standard_False;
-		}
-
-		status = writer.Write(Filename.c_str());
-		if (status != IFSelect_RetDone)
-		{
-			std::cerr << "错误：无法将曲线导出到 STEP 文件 " << Filename << std::endl;
-			return Standard_False;
-		}
-		else
-		{
-			std::cout << "成功：曲线已导出到 STEP 文件 " << Filename << std::endl;
 		}
 	}
 	else
 	{
-		// 使用默认的 BRep 格式导出
-		if (!BRepTools::Write(Result, Filename.c_str()))
+		if (!BRepTools::Write(Result, finalPath.string().c_str()))
 		{
-			std::cerr << "错误：无法将曲线导出到文件 " << Filename << std::endl;
+			std::cerr << "错误：无法导出到文件 " << finalPath << std::endl;
 			return Standard_False;
-		}
-		else
-		{
-			std::cout << "成功：曲线已导出到文件 " << Filename << std::endl;
 		}
 	}
 
+	std::cout << "成功：曲线已导出到文件 " << finalPath << std::endl;
 	return Standard_True;
 }
+
+
+Standard_Boolean SurfaceModelingTool::ExportPoints(
+	const std::vector<gp_Pnt>& points,
+	const std::string& stepPath,
+	const bool overwrite)
+{
+	std::filesystem::path filePath(stepPath);
+	std::filesystem::path directory = filePath.parent_path();
+	std::string extension = filePath.extension().string(); // ".step"
+	std::string stem = filePath.stem().string();           // 不带扩展名
+
+	// 自动创建目标目录（如果需要）
+	if (!directory.empty() && !std::filesystem::exists(directory))
+	{
+		if (!std::filesystem::create_directories(directory))
+		{
+			std::cerr << "错误：无法创建目标目录 " << directory << std::endl;
+			return Standard_False;
+		}
+	}
+
+	// 若不覆盖，则在已有文件名后添加 _1, _2 ...
+	std::filesystem::path finalPath = filePath;
+	if (!overwrite && std::filesystem::exists(finalPath))
+	{
+		int index = 1;
+		do {
+			finalPath = directory / (stem + "_" + std::to_string(index) + extension);
+			++index;
+		} while (std::filesystem::exists(finalPath));
+	}
+
+	// 构建复合体并添加点
+	STEPControl_Writer writer;
+	TopoDS_Compound compound;
+	BRep_Builder builder;
+	builder.MakeCompound(compound);
+
+	for (const auto& point : points)
+	{
+		TopoDS_Vertex vertex = BRepBuilderAPI_MakeVertex(point);
+		builder.Add(compound, vertex);
+	}
+
+	// STEP 转换与写入
+	IFSelect_ReturnStatus status = writer.Transfer(compound, STEPControl_AsIs);
+	if (status != IFSelect_RetDone)
+	{
+		std::cerr << "错误：STEP 转换失败。" << std::endl;
+		return Standard_False;
+	}
+
+	status = writer.Write(finalPath.string().c_str());
+	if (status != IFSelect_RetDone)
+	{
+		std::cerr << "错误：无法写入 STEP 文件：" << finalPath << std::endl;
+		return Standard_False;
+	}
+
+	std::cout << "成功：已导出 " << points.size() << " 个点到文件：" << finalPath << std::endl;
+	return Standard_True;
+}
+
 void SurfaceModelingTool::ApproximateBoundaryCurves(std::vector<Handle(Geom_BSplineCurve)>& curves, Standard_Integer samplingNum)
 {
 	for (auto& curve : curves)
@@ -4775,18 +4832,16 @@ Standard_Boolean MathTool::AreBSplinesCoPlanar(const std::vector<Handle(Geom_BSp
 
 Standard_Real MathTool::ComputeCurveLengthBetweenParameters(const Handle(Geom_BSplineCurve)& theCurve, Standard_Real theParameter1, Standard_Real theParameter2)
 {
+	GeomAdaptor_Curve adaptor(theCurve);
+	try
 	{
-		GeomAdaptor_Curve adaptor(theCurve);
-		try
-		{
-			Standard_Real length = CPnts_AbscissaPoint::Length(adaptor, theParameter1, theParameter2);
-			return length;
-		}
-		catch (Standard_ConstructionError& e)
-		{
-			std::cerr << "Error while calculating length: " << e.GetMessageString() << std::endl;
-			return -1.0; // 错误标识
-		}
+		Standard_Real length = CPnts_AbscissaPoint::Length(adaptor, theParameter1, theParameter2);
+		return length;
+	}
+	catch (Standard_ConstructionError& e)
+	{
+		std::cerr << "Error while calculating length: " << e.GetMessageString() << std::endl;
+		return -1.0; // 错误标识
 	}
 }
 

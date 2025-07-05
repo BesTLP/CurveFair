@@ -299,9 +299,14 @@ public:
 	}
 
 	// º¯ÊýÉùÃ÷
-	static bool ExportBSplineCurves(
+	static Standard_Boolean ExportBSplineCurves(
 		const std::vector<Handle(Geom_BSplineCurve)>& ISOcurvesArray_Final,
-		const std::string& Filename);
+		const std::string& Filename,
+		const bool overwrite = true);
+
+	static Standard_Boolean ExportPoints(const std::vector<gp_Pnt>& points,
+		const std::string& stepPath,
+		const bool overwrite = true);
 
 	static void ApproximateBoundaryCurves(std::vector<Handle(Geom_BSplineCurve)>& curves, int samplingNum = 50);
 
