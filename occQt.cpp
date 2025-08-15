@@ -953,6 +953,17 @@ std::vector<gp_Pnt> OccArrayConvertoVector(TColgp_Array1OfPnt theOccArray)
     }
     return PntArray;
 }
+
+std::vector<Standard_Real> OccArrayConvertoVector(TColStd_HArray1OfReal theOccArray)
+{
+    std::vector<Standard_Real> PntArray;
+    for (int i = theOccArray.Lower(); i <= theOccArray.Upper(); i++)
+    {
+        PntArray.push_back(theOccArray.Value(i));
+    }
+    return PntArray;
+}
+
 std::vector<gp_Pnt> OccArrayConvertoVector(Handle(Geom_BSplineCurve)& theCurve)
 {
     TColgp_Array1OfPnt Poles = theCurve->Poles();
@@ -963,6 +974,7 @@ std::vector<gp_Pnt> OccArrayConvertoVector(Handle(Geom_BSplineCurve)& theCurve)
     }
     return Result;
 }
+
 Standard_Real GetControlPointAverageDistance(std::vector<gp_Pnt> thePntArray)
 {
     if (thePntArray.size() == 0) return 0;
@@ -977,15 +989,26 @@ Standard_Real GetControlPointAverageDistance(std::vector<gp_Pnt> thePntArray)
 }
 
 // 将 Standard_Real 转为保留两位小数的字符串
-std::string format_as(Standard_Real value, int precision = 2) 
+std::string format_as(Standard_Real value, int precision = 2)
 {
     std::ostringstream out;
     out << std::fixed << std::setprecision(precision) << value;
     return out.str();
 }
 
+// 将 Standard_Real 转为保留两位小数的字符串
+std::string format_as(std::vector<Standard_Real> values, int precision = 2)
+{
+    std::ostringstream out;
+    for (auto value : values)
+    {
+        out << std::fixed << std::setprecision(precision) << value << " ";
+    }
+    return out.str();
+}
+
 // 读取 .dat 文件，返回 gp_Pnt 向量
-std::vector<gp_Pnt> ReadDatToPoints(const std::string& filePath) 
+std::vector<gp_Pnt> ReadDatToPoints(const std::string& filePath)
 {
     std::vector<gp_Pnt> points;
     std::ifstream infile(filePath);
@@ -996,24 +1019,24 @@ std::vector<gp_Pnt> ReadDatToPoints(const std::string& filePath)
     }
 
     std::string line;
-    while (std::getline(infile, line)) 
+    while (std::getline(infile, line))
     {
         std::istringstream iss(line);
         std::string x_str, y_str, z_str;
 
         if (std::getline(iss, x_str, ',') &&
             std::getline(iss, y_str, ',') &&
-            std::getline(iss, z_str, ',')) 
+            std::getline(iss, z_str, ','))
         {
 
-            try 
+            try
             {
                 Standard_Real x = std::stod(x_str);
                 Standard_Real y = std::stod(y_str);
                 Standard_Real z = std::stod(z_str);
                 points.emplace_back(x, y, z);
             }
-            catch (const std::exception& e) 
+            catch (const std::exception& e)
             {
             }
         }
@@ -1040,7 +1063,7 @@ std::vector<std::string> GetFilesWithExtensions(
                 std::string ext = entry.path().extension().string();
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-                for (const auto& rawExt : extensions) 
+                for (const auto& rawExt : extensions)
                 {
                     std::string normExt = rawExt;
                     if (!normExt.empty() && normExt[0] != '.')
@@ -1059,23 +1082,23 @@ std::vector<std::string> GetFilesWithExtensions(
         }
         else
         {
-            for (const auto& entry : std::filesystem::directory_iterator(folderPath)) 
+            for (const auto& entry : std::filesystem::directory_iterator(folderPath))
             {
                 if (!entry.is_regular_file()) continue;
 
                 std::string ext = entry.path().extension().string();
                 std::transform(ext.begin(), ext.end(), ext.begin(), ::tolower);
 
-                for (const auto& rawExt : extensions) 
+                for (const auto& rawExt : extensions)
                 {
                     std::string normExt = rawExt;
-                    if (!normExt.empty() && normExt[0] != '.') 
+                    if (!normExt.empty() && normExt[0] != '.')
                     {
                         normExt = "." + normExt;
                     }
                     std::transform(normExt.begin(), normExt.end(), normExt.begin(), ::tolower);
 
-                    if (ext == normExt) 
+                    if (ext == normExt)
                     {
                         result.push_back(entry.path().string());
                         break;
@@ -1084,7 +1107,7 @@ std::vector<std::string> GetFilesWithExtensions(
             }
         }
     }
-    catch (const std::exception& e) 
+    catch (const std::exception& e)
     {
         std::cerr << "遍历文件夹时出错: " << e.what() << std::endl;
     }
@@ -1092,7 +1115,7 @@ std::vector<std::string> GetFilesWithExtensions(
     return result;
 }
 
-Standard_Real AveragePointsDistance(const std::vector<gp_Pnt>& points, size_t K = 10) 
+Standard_Real AveragePointsDistance(const std::vector<gp_Pnt>& points, size_t K = 10)
 {
     if (points.size() < 2) return 0.0;
 
@@ -1118,6 +1141,40 @@ Standard_Real AveragePointsDistance(const std::vector<gp_Pnt>& points, size_t K 
 
     return count == 0 ? 0.0 : totalDist / count;
 }
+
+Standard_Real ComputeThirdDerivativeEnergy(const Handle(Geom_BSplineCurve)& theCurve,
+    const Standard_Integer nbSamples = 1000)
+{
+    if (theCurve.IsNull()) return 0.0;
+
+    Standard_Real uStart = theCurve->FirstParameter();
+    Standard_Real uEnd = theCurve->LastParameter();
+
+    // Step size
+    Standard_Real du = (uEnd - uStart) / (nbSamples - 1);
+
+    Standard_Real integral = 0.0;
+
+    for (Standard_Integer i = 0; i < nbSamples; ++i)
+    {
+        Standard_Real u = uStart + i * du;
+
+        gp_Vec d1, d2, d3;
+        gp_Pnt temp;
+        theCurve->D3(u, temp, d1, d2, d3); // d3 is the third derivative
+
+        Standard_Real normSquared = d3.SquareMagnitude();
+
+        // 使用梯形积分法
+        if (i == 0 || i == nbSamples - 1)
+            integral += 0.5 * normSquared * du;
+        else
+            integral += normSquared * du;
+    }
+
+    return integral;
+}
+
 void occQt::about()
 {
     // 弹出文件夹选择对话框
@@ -1131,9 +1188,9 @@ void occQt::about()
     QDir folderDir(folderPath);
 
 
-    //std::vector<std::string> filePaths = GetFilesWithExtensions(folderPath.toStdString(), {".dat", ".brep"});
-    //std::vector<std::string> filePaths = GetFilesWithExtensions(folderPath.toStdString(), {".brep"});
-    std::vector<std::string> filePaths = GetFilesWithExtensions(folderPath.toStdString(), {".dat"},false);
+    std::vector<std::string> filePaths = GetFilesWithExtensions(folderPath.toStdString(), { ".dat" });
+    //std::vector<std::string> filePaths = GetFilesWithExtensions(folderPath.toStdString(), { ".step",".stp"});
+    //std::vector<std::string> filePaths = GetFilesWithExtensions(folderPath.toStdString(), {".dat"},false);
     std::cout << filePaths.size() << std::endl;
     std::string doneDir = folderPath.toStdString() + "/done";
     std::string errorDir = folderPath.toStdString() + "/error";
@@ -1147,7 +1204,7 @@ void occQt::about()
         auto fileName = file.substr(0, dot);
         auto extension = file.substr(dot + 1);
         std::string outputFolder = fileName + "_Result";
-        std::string fileOnlyName = std::filesystem::path(file).filename().string();
+        std::string fileOnlyName = std::filesystem::path(file).stem().string();
         std::vector<gp_Pnt> points;
         Handle(Geom_BSplineCurve) curve;
 
@@ -1171,7 +1228,8 @@ void occQt::about()
 
             if (extension == "dat")
             {
-                CurveFair::ExportFilePath = outputFolder + "/FitPointResult";
+                CurveFair::ExportFilePath = outputFolder + "/" + fileOnlyName;
+                std::string TrimmedCurvePath = outputFolder + "/" + fileOnlyName + "_TrimmedCurve";
                 std::filesystem::create_directory(CurveFair::ExportFilePath);
 
                 points = ReadDatToPoints(file);
@@ -1183,53 +1241,13 @@ void occQt::about()
                 std::vector<Handle(Geom_BSplineCurve)> resultSegments = { originalCurve };
                 std::vector<std::vector<gp_Pnt>> fitPointsSegments = { points };
                 SurfaceModelingTool::ExportPoints(points, CurveFair::ExportFilePath + "/FitPoints.step");
-                SurfaceModelingTool::ExportBSplineCurves({ originalCurve }, CurveFair::ExportFilePath + "/OriginalCurve.step");
+                Standard_Real totalLength = GCPnts_AbscissaPoint::Length(GeomAdaptor_Curve(originalCurve));
+                std::cout << "长度:" << totalLength << std::endl;
+                SurfaceModelingTool::ExportBSplineCurves({ originalCurve },
+                    CurveFair::ExportFilePath + "/OriginalCurve_" +
+                    format_as(totalLength) + "_" +
+                    std::to_string(originalCurve->NbKnots()) + "_" + std::to_string(originalCurve->NbPoles()) + ".step");
 
-                //Standard_Real totalLength = GCPnts_AbscissaPoint::Length(GeomAdaptor_Curve(originalCurve));
-                //Standard_Real segmentMaxLength = 30000;
-                //Standard_Integer nSegments = std::ceil(totalLength / segmentMaxLength);
-
-
-                //fitPointsSegments.resize(nSegments);
-                //for (const auto& pt : points)
-                //{
-                //    // 最近点投影求 t 参数
-                //    GeomAPI_ProjectPointOnCurve projector(pt, originalCurve);
-                //    if (!projector.NbPoints()) continue;
-
-                //    Standard_Real t = projector.LowerDistanceParameter();
-
-                //    // 弧长计算（从曲线起点到投影点）
-                //    Standard_Real s = GCPnts_AbscissaPoint::Length(GeomAdaptor_Curve(originalCurve), originalCurve->FirstParameter(), t);
-
-                //    int idx = std::min(int(s / segmentMaxLength), nSegments - 1);
-                //    fitPointsSegments[idx].push_back(pt);
-                //}
-
-                //Standard_Real curveFirstParam = originalCurve->FirstParameter();
-                //Standard_Real curveLastParam = originalCurve->LastParameter();
-                //Standard_Real tolerance = 1e-6;  // 你可以根据需求调整
-
-                //std::vector<Handle(Geom_BSplineCurve)> resultSegments;
-                //for (int i = 0; i < nSegments; ++i)
-                //{
-                //    Standard_Real s_start = i * segmentMaxLength;
-                //    Standard_Real s_end = std::min((i + 1) * segmentMaxLength, totalLength);
-
-                //    Standard_Real t_start = (i == 0) ? curveFirstParam :
-                //        MathTool::GetParameterAtLength(originalCurve, curveFirstParam, s_start, tolerance);
-                //    Standard_Real t_end = (i == nSegments - 1) ? curveLastParam :
-                //        MathTool::GetParameterAtLength(originalCurve, curveFirstParam, s_end, tolerance);
-                //    // 用 Geom_TrimmedCurve 截取曲线段
-                //    Handle(Geom_TrimmedCurve) segment = new Geom_TrimmedCurve(originalCurve, t_start, t_end);
-
-
-                //    // CurveFair 的构造函数需要 Geom_BSplineCurve，因此要转换
-                //    Handle(Geom_BSplineCurve) segmentBSpline = GeomConvert::CurveToBSplineCurve(segment);;
-                //    UniformCurve(segmentBSpline);
-                //    resultSegments.push_back(segmentBSpline);
-
-                //}
                 for (Standard_Real hausdorffDistance = 50; hausdorffDistance >= 50; hausdorffDistance *= 0.5)
                 {
                     Standard_Real hausdorffDistanceResult = INT_MIN;
@@ -1239,14 +1257,19 @@ void occQt::about()
                         std::cout << "处理前节点数量" << resultSegments[i]->NbKnots() << std::endl;
                         std::cout << "处理前控制点数量" << resultSegments[i]->NbPoles() << std::endl;
                         CurveFair aCurveFairConstructor(resultSegments[i], fitPointsSegments[i], hausdorffDistance);
+                        aCurveFairConstructor.Perform();
                         results.push_back(aCurveFairConstructor.GetResult());
                         Visualize(aCurveFairConstructor.GetOriginalCurve(), Quantity_NOC_GOLD);
-                        std::cout << "处理后节点数量" <<aCurveFairConstructor.GetOriginalCurve()->NbKnots() << std::endl;
-                        std::cout << "处理后控制点数量" <<aCurveFairConstructor.GetOriginalCurve()->NbPoles() << std::endl;
+                        std::cout << "处理后节点数量" << aCurveFairConstructor.GetResult()->NbKnots() << std::endl;
+                        std::cout << "处理后控制点数量" << aCurveFairConstructor.GetResult()->NbPoles() << std::endl;
                         Visualize(aCurveFairConstructor.GetResult(), Quantity_NOC_RED);
                         Visualize(OccArrayConvertoVector(aCurveFairConstructor.GetResult()->Poles()), Quantity_NOC_RED);
                         Standard_Real hsResult = aCurveFairConstructor.GetHausdorffDistanceResult();
                         hausdorffDistanceResult = std::max(hsResult, hausdorffDistanceResult);
+                        SurfaceModelingTool::ExportBSplineCurves({ aCurveFairConstructor.GetOriginalCurve() },
+                            CurveFair::ExportFilePath + "/OriginalCurve_InsertKnots_" +
+                            format_as(totalLength) + "_" +
+                            std::to_string(aCurveFairConstructor.GetOriginalCurve()->NbKnots()) + "_" + std::to_string(aCurveFairConstructor.GetOriginalCurve()->NbPoles()) + ".step");
 
                     }
 
@@ -1266,63 +1289,33 @@ void occQt::about()
                     {
                         throw("ERROR::FAILED TO JOIN CURVES!!!");
                     }
-                    SurfaceModelingTool::ExportBSplineCurves({ curve = joiner.BSplineCurve() },
-                        CurveFair::ExportFilePath + "/Result_HausdorffDistance_" + format_as(hausdorffDistanceResult) + ".step");
+                    auto curve = joiner.BSplineCurve();
+                    SurfaceModelingTool::ExportBSplineCurves({ curve },
+                        CurveFair::ExportFilePath + "/Result_HausdorffDistance_" + format_as(hausdorffDistanceResult) + "_"
+                        + std::to_string(curve->NbKnots()) + "_" + std::to_string(curve->NbPoles()) + ".step", false);
                 }
 
                 myOccView->getContext()->EraseAll(Standard_True);
             }
-            else if (extension == "brep")
+            else if (extension == "brep" || extension == "step" || extension == "stp")
             {
-                CurveFair::ExportFilePath = outputFolder + "/CurveResult";
+                CurveFair::ExportFilePath = outputFolder;
                 std::filesystem::create_directory(outputFolder);
                 std::vector<Handle(Geom_BSplineCurve)> aCurveArray;
                 SurfaceModelingTool::LoadBSplineCurves(file, aCurveArray);
-
-                GeomConvert_CompCurveToBSplineCurve joiner(aCurveArray[0]);
-                Standard_Boolean isJoint = Standard_True;
-                for (Standard_Integer i = 1; i < aCurveArray.size(); ++i)
+                for (auto curve : aCurveArray)
                 {
-                    if (!joiner.Add(aCurveArray[i], Precision::Confusion()))
-                    {
-                        std::cout << "Failed to join curve at index " << i << std::endl;
-                        isJoint = Standard_False;
-                        break;
-                    }
+                    CurveFair aCurveFairConstructor;
+                    UniformCurve(curve);
+                    Standard_Real aCurveFairEnergy = aCurveFairConstructor.ComputeCurveFairEnergy(curve);
+                    std::vector<Standard_Real> anAngleArray = aCurveFairConstructor.ComputeThirdDerivativeAngles(curve);
+
+                    SurfaceModelingTool::ExportBSplineCurves({ curve },
+                        CurveFair::ExportFilePath + "/OriginalCurve_" + format_as(aCurveFairEnergy) +
+                        "_" + format_as(*std::max_element(anAngleArray.begin(), anAngleArray.end())) + ".step", true);
+                    myOccView->getContext()->EraseAll(Standard_True);
                 }
-
-                if (!isJoint)
-                {
-                    throw("ERROR::FAILED TO JOIN CURVES!!!");
-                }
-
-                curve = joiner.BSplineCurve();
-                PointAverageDistance = GetControlPointAverageDistance(OccArrayConvertoVector(curve));
-                for (Standard_Real hausdorffDistance = 1000; hausdorffDistance >= 30; hausdorffDistance *= 0.8)
-                {
-                    CurveFair aCurveFairConstructor(curve, points, hausdorffDistance);
-                    gp_Vec tangent1(aCurveFairConstructor.GetOriginalCurve()->Pole(1), aCurveFairConstructor.GetOriginalCurve()->Pole(2));
-                    gp_Vec tangent2(aCurveFairConstructor.GetOriginalCurve()->Pole(aCurveFairConstructor.GetOriginalCurve()->NbPoles() - 1), aCurveFairConstructor.GetOriginalCurve()->Pole(aCurveFairConstructor.GetOriginalCurve()->NbPoles()));
-
-                    SurfaceModelingTool::ExportBSplineCurves({ curve }, CurveFair::ExportFilePath + "/OriginalCurve.step");
-
-                    gp_Vec newTangent1(aCurveFairConstructor.GetResult()->Pole(1), aCurveFairConstructor.GetResult()->Pole(2));
-                    gp_Vec newTangent2(aCurveFairConstructor.GetResult()->Pole(aCurveFairConstructor.GetResult()->NbPoles() - 1), aCurveFairConstructor.GetResult()->Pole(aCurveFairConstructor.GetResult()->NbPoles()));
-
-                    Standard_Real angle1 = tangent1.Angle(newTangent1);
-                    Standard_Real angle2 = tangent2.Angle(newTangent2);
-                    std::cout << "ERROR::Tangent vectors are not equal." << "Angle1 : " << angle1 << " Angle2 : " << angle2 << std::endl;
-
-                    Visualize(aCurveFairConstructor.GetOriginalCurve(), Quantity_NOC_GOLD);
-                    Visualize(aCurveFairConstructor.GetResult(), Quantity_NOC_RED); 
-                    Visualize(OccArrayConvertoVector(aCurveFairConstructor.GetResult()->Poles()), Quantity_NOC_RED);
-                    Standard_Real hausdorffDistanceResult = aCurveFairConstructor.GetHausdorffDistanceResult();
-                    SurfaceModelingTool::ExportBSplineCurves({ aCurveFairConstructor.GetResult() }, CurveFair::ExportFilePath + "/Result_HausdorffDistance_" + format_as(hausdorffDistanceResult) + ".step");
-                }
-                myOccView->getContext()->EraseAll(Standard_True);
             }
-
-            success = true;
         }
         catch (const std::exception& e)
         {
@@ -1332,8 +1325,8 @@ void occQt::about()
         // 成功或失败后移动原始文件
         try
         {
-            std::string destination = success ? (doneDir + "/" + fileOnlyName) : (errorDir + "/" + fileOnlyName);
-            std::filesystem::rename(file, destination);
+            //std::string destination = success ? (doneDir + "/" + fileOnlyName) : (errorDir + "/" + fileOnlyName);
+            //std::filesystem::rename(file, destination);
         }
         catch (const std::exception& e)
         {
@@ -1341,6 +1334,7 @@ void occQt::about()
         }
     }
 }
+
 
 
 void occQt::importFile()
@@ -1585,91 +1579,208 @@ void occQt::PrintInfo()
 
 }
 
+
+// 对单条等参线进行等距采样并计算弧长
+std::vector<gp_Pnt> SampleCurveWithArcLength(const Handle(Geom_BSplineCurve)& bsplineCurve, Standard_Integer numSamples)
+{
+    Handle(GeomAdaptor_Curve) curve = new GeomAdaptor_Curve(bsplineCurve);
+    GCPnts_QuasiUniformAbscissa sampler(*curve, numSamples);
+    std::vector<gp_Pnt> sampledPointsWithArcLength;
+
+    for (Standard_Integer i = 1; i <= sampler.NbPoints(); ++i)
+    {
+        Standard_Real param = sampler.Parameter(i);
+        gp_Pnt point = curve->Value(param); // 获取点坐标
+
+        // 更新点
+        sampledPointsWithArcLength.emplace_back(point);
+    }
+
+    return sampledPointsWithArcLength;
+}
+
+
 void occQt::RandomExport()
 {
+    // 选择Curve曲线文件
+    QString theCurveFile = QFileDialog::getOpenFileName(nullptr,
+        "Select Internal BSpline Curve File", "",
+        "STEP/BREP Files (*.step *.stp *.brep)");
+    if (theCurveFile.isEmpty()) return;
 
-    // 创建一个文件对话框
-    QFileDialog dialog;
+    // 加载内部曲线
+    std::vector<Handle(Geom_BSplineCurve)> theBSplineCurves;
+    SurfaceModelingTool::LoadBSplineCurves(theCurveFile.toStdString(), theBSplineCurves);
 
-    // 设置对话框模式为选择文件夹
-    dialog.setFileMode(QFileDialog::Directory);
-    QString folderPath;
-    // 显示对话框
-    if (dialog.exec()) {
-        // 获取用户选择的文件夹路径
-        folderPath = dialog.selectedFiles().first();
+    // 输入 LowerBound
+    bool okLower;
+    double LowerBound = QInputDialog::getDouble(nullptr,
+        "Lower Bound", "Enter Lower Bound (tol min):",
+        0.1, 0.0001, 2000, 6, &okLower);
+    if (!okLower) return;
+
+    // 输入 UpperBound
+    bool okUpper;
+    double UpperBound = QInputDialog::getDouble(nullptr,
+        "Upper Bound", "Enter Upper Bound (tol max):",
+        1.0, 0.0001, 2000, 6, &okUpper);
+    if (!okUpper) return;
+
+    if (LowerBound > UpperBound)
+    {
+        QMessageBox::warning(nullptr, "Error", "LowerBound must be <= UpperBound");
+        return;
     }
-    // 获取两个简单字符串
-    bool ok;
-    QString string1 = QInputDialog::getText(nullptr, "Input", "Enter String 1: (Basic Model Type: plane, cone, cylinder, sphere, torus)", QLineEdit::Normal, "", &ok);
-    QString string2 = QInputDialog::getText(nullptr, "Input", "Enter String 2: (Basic Model Type: plane, cone, cylinder, sphere, torus)", QLineEdit::Normal, "", &ok);
-    Standard_Integer value = QInputDialog::getInt(nullptr, "Input", "Enter an Integer:", 0, 0, 100, 1, &ok);
 
+    // 选择导出目录
+    QString exportDir = QFileDialog::getExistingDirectory(nullptr,
+        "Select Export Directory");
+    if (exportDir.isEmpty()) return;
 
-    // 使用用户输入调用RandomExport::randomRotateAndExport()
-    RandomExport::randomRotateAndExport(folderPath.toStdString().c_str(), string1.toStdString().c_str(), string2.toStdString().c_str(), value);
+    // 循环导出
+    for (Standard_Real tol = UpperBound; tol >= LowerBound; tol /= 2)
+    {
+        std::vector<Handle(Geom_BSplineCurve)> aCurveFairResultArray;
+        for (auto& curve : theBSplineCurves)
+        {
+            std::cout << curve->Degree() << " " << format_as(OccArrayConvertoVector(curve->Knots())) << std::endl;
+            curve->IncreaseDegree(3);
+            UniformCurve(curve);
+
+            std::cout << curve->Degree() << " " << format_as(OccArrayConvertoVector(curve->Knots())) << std::endl;
+            // 用 GeomAdaptor_Curve 包装
+            GeomAdaptor_Curve adaptor(curve);
+            // 计算长度
+            Standard_Real length = GCPnts_AbscissaPoint::Length(adaptor,
+                curve->FirstParameter(), curve->LastParameter());
+
+            Visualize(curve);
+            std::vector<gp_Pnt> theFitPoints;
+            CurveFair aCurveFairConstructor(curve, theFitPoints, tol);
+            aCurveFairConstructor.ReFitCurve();
+            aCurveFairConstructor.InsertKnots();
+            aCurveFairConstructor.Perform();
+            //std::vector<gp_Pnt> theFitPoints = SampleCurveWithArcLength(curve, 100);
+            //Handle(Geom_BSplineCurve) emptyCurve;
+            //CurveFair aCurveFairConstructor(emptyCurve, theFitPoints, tol, Standard_True, Standard_True);
+            Visualize(aCurveFairConstructor.GetResult(), Quantity_NOC_RED);
+            Visualize(OccArrayConvertoVector(aCurveFairConstructor.GetResult()->Poles()), Quantity_NOC_BLUE);
+            aCurveFairResultArray.push_back(aCurveFairConstructor.GetResult());
+            myOccView->getContext()->RemoveAll(Standard_True);
+        }
+
+        // 构造文件名
+        QString fileName = QString("%1/tol_%2.step")
+            .arg(exportDir)
+            .arg(tol, 0, 'f', 2); // 2 位小数
+        SurfaceModelingTool::ExportBSplineCurves(aCurveFairResultArray, fileName.toStdString());
+    }
+
+    QMessageBox::information(nullptr, "Export Complete",
+        "Random export of curves completed.");
 }
 
 
 void occQt::MakePoint()
 {
-    bool ok;
+    // 选择内部曲线文件
+    QString internalFile = QFileDialog::getOpenFileName(nullptr,
+        "Select Internal BSpline Curve File", "",
+        "STEP/BREP Files (*.step *.stp *.brep)");
+    if (internalFile.isEmpty()) return;
 
-    Standard_Real x = QInputDialog::getDouble(nullptr, "Input", "Enter X for point:", 0, -1000, 1000, 8, &ok);
-    Standard_Real y = QInputDialog::getDouble(nullptr, "Input", "Enter Y for point:", 0, -1000, 1000, 8, &ok);
-    Standard_Real z = QInputDialog::getDouble(nullptr, "Input", "Enter Z for point:", 0, -1000, 1000, 8, &ok);
+    // 选择边界曲线文件
+    QString boundaryFile = QFileDialog::getOpenFileName(nullptr,
+        "Select Boundary Curve File", "",
+        "STEP/BREP Files (*.step *.stp *.brep)");
+    if (boundaryFile.isEmpty()) return;
 
-    TopoDS_Shape point = MakeShape::MakePoint(x, y, z);
-    if (!point.IsNull())
-    {
-        Handle(AIS_Shape) aPoint = new AIS_Shape(point);
-        aPoint->SetColor(Quantity_NOC_BISQUE);
-        myOccView->getContext()->Display(aPoint, Standard_True);
-    }
+    // 加载内部曲线
+    std::vector<Handle(Geom_BSplineCurve)> theInternalBSplineCurves;
+    SurfaceModelingTool::LoadBSplineCurves(internalFile.toStdString(), theInternalBSplineCurves);
+
+    // 加载边界曲线
+    std::vector<Handle(Geom_BSplineCurve)> theBoundaryCurveArray;
+    SurfaceModelingTool::LoadBSplineCurves(boundaryFile.toStdString(), theBoundaryCurveArray);
+
+    // 执行裁剪
+    MathTool::TrimInternalCurves(theInternalBSplineCurves, theBoundaryCurveArray);
+
+    // 选择导出路径
+    QString exportFile = QFileDialog::getSaveFileName(nullptr,
+        "Save Trimmed Curves", "",
+        "STEP/BREP Files (*.step *.stp *.brep)");
+    if (exportFile.isEmpty()) return;
+
+    // 导出裁剪结果
+    SurfaceModelingTool::ExportBSplineCurves(theInternalBSplineCurves,
+        exportFile.toStdString(), false);
+
+    QMessageBox::information(nullptr, "Export Complete",
+        QString("Trimmed curves have been saved to:\n%1").arg(exportFile));
 }
+
 
 
 void occQt::MakeCurve()
 {
-    bool ok;
-    QString curveType = QInputDialog::getText(nullptr, "Input", "Enter Curve Type: (circle, ellipse, parabola, hyperbola, line)", QLineEdit::Normal, "", &ok);
-    if (ok)
-        curveShape = createCurve(curveType);
+    // 选择第一个曲线文件
+    QString file1 = QFileDialog::getOpenFileName(nullptr, "Select First Curve File", "", "STEP/BREP Files (*.step *.stp *.brep)");
+    if (file1.isEmpty()) return;
 
-    if (!curveShape.IsNull())
-    {
-        Handle(AIS_Shape) aCurve = new AIS_Shape(curveShape);
-        aCurve->SetColor(Quantity_NOC_BISQUE);
-        myOccView->getContext()->Display(aCurve, Standard_True);
-    }
+    // 选择第二个曲线文件
+    QString file2 = QFileDialog::getOpenFileName(nullptr, "Select Second Curve File", "", "STEP/BREP Files (*.step *.stp *.brep)");
+    if (file2.isEmpty()) return;
+
+    // 加载两组曲线
+    std::vector<Handle(Geom_BSplineCurve)> curveList1;
+    std::vector<Handle(Geom_BSplineCurve)> curveList2;
+
+    SurfaceModelingTool::LoadBSplineCurves(file1.toStdString(), curveList1);
+    SurfaceModelingTool::LoadBSplineCurves(file2.toStdString(), curveList2);
+
+
+    // 只取第一条曲线进行比较（如有多条，可自行扩展）
+    Handle(Geom_BSplineCurve) curve1 = curveList1.front();
+    Handle(Geom_BSplineCurve) curve2 = curveList2.front();
+
+    // 调用已实现的函数
+    CurveFair aCurveFairConstructor;
+    Standard_Real hausdorffDist = aCurveFairConstructor.GetCurveCurveHausdorffDistance(curve1, curve2);
+
+    // 显示结果
+    QMessageBox::information(nullptr, "Hausdorff Distance",
+        QString("Hausdorff Distance between curves:\n%1").arg(hausdorffDist));
+
 }
 
 void occQt::MakeSurface()
 {
-    bool ok;
-    TopoDS_Shape shape;
-    QString surfaceType = QInputDialog::getText(nullptr, "Input", "Enter Surface Type: (plane, cylinder, sphere, cone, torus)", QLineEdit::Normal, "", &ok);
-    if (ok)
+    // 选择点的 dat 文件
+    QString datFile = QFileDialog::getOpenFileName(nullptr, "Open Point File", "", "DAT Files (*.dat)");
+    if (datFile.isEmpty()) return;
+
+    std::vector<gp_Pnt> pointList = ReadDatToPoints(datFile.toStdString());
+
+    // 选择曲线文件（BRep 或 STEP）
+    QString curveFile = QFileDialog::getOpenFileName(nullptr, "Open Curve File", "", "Geometry Files (*.brep *.step *.stp)");
+    if (curveFile.isEmpty()) return;
+
+    // 加载 B样条曲线
+    std::vector<Handle(Geom_BSplineCurve)> aCurveArray;
+    SurfaceModelingTool::LoadBSplineCurves(curveFile.toStdString(), aCurveArray);
+
+    // 对每条曲线计算 Hausdorff 距离，并显示结果
+    QString resultText;
+    for (size_t i = 0; i < aCurveArray.size(); ++i)
     {
-        shape = createSurface(surfaceType);
-        if (changeCount % 2 == 0)
-        {
-            shape1 = shape;
-        }
-        else
-        {
-            shape2 = shape;
-        }
-        changeCount++;
+        const auto& curve = aCurveArray[i];
+        CurveFair aCurveFairConstructor;
+        Standard_Real distance = aCurveFairConstructor.GetPointCurveHausdorffDistance(pointList, curve);
+        resultText += QString("Curve %1: Hausdorff Distance = %2\n").arg(i).arg(distance);
     }
 
-    if (!shape.IsNull())
-    {
-        Handle(AIS_Shape) aShape = new AIS_Shape(shape);
-        aShape->SetColor(Quantity_NOC_BISQUE);
-        myOccView->getContext()->Display(aShape, Standard_True);
-    }
-    intersectionDone = Standard_False;
+    QMessageBox::information(nullptr, "Hausdorff Distances", resultText);
 }
 
 void occQt::ExportFile()
@@ -1738,6 +1849,7 @@ std::vector<std::pair<gp_Pnt, Standard_Real>> SampleIsoCurveWithArcLength(const 
 
     return sampledPointsWithArcLength;
 }
+
 // 输出采样点和对应弧长的函数
 void PrintSampledPointsWithArcLength(const std::vector<std::pair<gp_Pnt, Standard_Real>>& sampledPoints) {
     for (const auto& pair : sampledPoints)
@@ -1787,7 +1899,7 @@ void UniformCurve(Handle(Geom_BSplineCurve)& curve);
 void occQt::GenerateIsoCurves(void)
 {
 
-    for (Standard_Integer i = 35; i <= 53; i++)
+    for (Standard_Integer i = 24; i <= 24; i++)
     {
         if (i == 23 || (i >= 42 && i <= 45) || i == 40) continue;;
         occQt::isVisualize = Standard_True;
@@ -1798,7 +1910,7 @@ void occQt::GenerateIsoCurves(void)
         std::string filename = "E:/Models/";
         filename += std::to_string(i);
         filename += "_";
-        std::string boundaryPath = filename + "boundary.brep";
+        std::string boundaryPath = filename + "boundary.step";
         SurfaceModelingTool::LoadBSplineCurves(boundaryPath.c_str(), tempArray);
         SurfaceModelingTool::ApproximateBoundaryCurves(tempArray);
 
@@ -1814,11 +1926,10 @@ void occQt::GenerateIsoCurves(void)
         }
 
         std::vector<Handle(Geom_BSplineCurve)> anInternalBSplineCurves;
-        std::string internalPath = filename + "internal.brep";
+        std::string internalPath = filename + "internal.step";
 
         SurfaceModelingTool::LoadBSplineCurves(internalPath, anInternalBSplineCurves);
         Visualize(anInternalBSplineCurves);
-        MathTool::TrimInternalCurves(anInternalBSplineCurves, tempArray);
         Visualize(anInternalBSplineCurves);
         if (tempArray.size() == 3)
         {
@@ -2007,11 +2118,12 @@ void occQt::GenerateIsoCurves(void)
         SurfaceModelingTool::Arrange_Coons_G0(tempArray, bslpineCurve1, bslpineCurve2, bslpineCurve3, bslpineCurve4, 10, Standard_True);
         std::vector<Handle(Geom_BSplineCurve)> aBoundarycurveArray = { bslpineCurve1 , bslpineCurve2, bslpineCurve3, bslpineCurve4 };
 
+        MathTool::TrimInternalCurves(anInternalBSplineCurves, tempArray);
+        myOccView->getContext()->RemoveAll(Standard_True);
+        Visualize(aBoundarycurveArray);
+        Visualize(anInternalBSplineCurves);
+        SurfaceModelingTool::ExportBSplineCurves(anInternalBSplineCurves, "trimmedinternal.step");
         // = Standard_True;
-        Visualize(tempArray[0], Quantity_NOC_RED);
-        Visualize(tempArray[2], Quantity_NOC_RED);
-        Visualize(tempArray[1], Quantity_NOC_BLUE);
-        Visualize(tempArray[3]->StartPoint(), Quantity_NOC_BLUE);
         Standard_Integer isoCount = 20;
         std::vector<Handle(Geom_BSplineCurve)> uISOcurvesArray_Initial, vISOcurvesArray_Initial;
         std::vector<Handle(Geom_BSplineCurve)> uISOcurvesArray_Final, vISOcurvesArray_Final;
